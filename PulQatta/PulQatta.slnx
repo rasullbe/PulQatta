@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PulQatta.Api/PulQatta.Api.csproj" />
+  </Folder>
+</Solution>
