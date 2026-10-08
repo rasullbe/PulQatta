@@ -1,0 +1,60 @@
+@page "/month"
+@using PulQatta.UI.DTOs
+@using PulQatta.UI.Services
+@inject IApiService ApiService
+@inject NavigationManager NavigationManager
+
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 32px; margin-top: 12px;">
+    <button @onclick='() => NavigationManager.NavigateTo("/")' style="background: none; border: none; cursor: pointer; padding: 0;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+    </button>
+    <h2 style="margin: 0; font-size: 1.5rem;">Month Summary</h2>
+</div>
+
+@if (_summary == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    var total = _summary.Sum(s => s.TotalAmount);
+    var totalUsd = total / 12800m;
+    
+    <div style="margin-bottom: 40px;">
+        <h1 style="font-size: 2.5rem; margin-bottom: 4px;">@total.ToString("N0") UZS</h1>
+        <h2 style="font-size: 1.5rem; color: #6B7280; margin-bottom: 4px;">$@totalUsd.ToString("N2")</h2>
+        <p class="text-muted-custom" style="font-weight: 600;">Total spent this month</p>
+    </div>
+
+    <div>
+        @if (_summary.Length == 0)
+        {
+            <p class="text-muted-custom">No expenses this month.</p>
+        }
+        else
+        {
+            @foreach (var item in _summary)
+            {
+                <div class="expense-item" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-weight: 600; font-size: 1.1rem;">
+                        @item.Category.ToString()
+                    </div>
+                    <div style="text-align: right;">
+                        @{ var itemUsd = item.TotalAmount / 12800m; }
+                        <div style="font-weight: 700; font-size: 1.1rem;">@item.TotalAmount.ToString("N0") UZS</div>
+                        <div class="text-muted-custom" style="font-size: 0.9rem;">$@itemUsd.ToString("N2")</div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    private CategorySummaryGetDto[]? _summary;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _summary = await ApiService.GetMonthSummaryAsync();
+    }
+}

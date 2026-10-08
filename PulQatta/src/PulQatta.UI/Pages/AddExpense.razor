@@ -1,0 +1,62 @@
+@page "/add"
+@using PulQatta.UI.DTOs
+@using PulQatta.UI.Entities
+@using PulQatta.UI.Services
+@inject IApiService ApiService
+@inject NavigationManager NavigationManager
+
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 32px; margin-top: 12px;">
+    <button @onclick='() => NavigationManager.NavigateTo("/")' style="background: none; border: none; cursor: pointer; padding: 0;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+    </button>
+    <h2 style="margin: 0; font-size: 1.5rem;">Add Expense</h2>
+</div>
+
+<div style="margin-bottom: 24px;">
+    <input type="number" class="form-control-custom" placeholder="Amount" @bind="_amount" @bind:event="oninput" style="margin-bottom: 16px;" />
+    
+    <input type="text" class="form-control-custom" placeholder="Note (optional)" @bind="_note" style="font-size: 1.1rem; font-weight: 400; border-bottom: 1px solid #E5E7EB;" />
+</div>
+
+<div>
+    <p class="text-muted-custom" style="font-weight: 600; margin-bottom: 8px;">Select Category to Save</p>
+    <div class="category-grid">
+        @foreach (var category in Enum.GetValues<Category>())
+        {
+            <button class="category-btn" disabled="@(_amount <= 0 || _isSaving)" @onclick="() => SaveExpenseAsync(category)">
+                @category.ToString()
+            </button>
+        }
+    </div>
+</div>
+
+@if (_isSaving)
+{
+    <div style="margin-top: 24px; text-align: center;" class="text-muted-custom">
+        Saving...
+    </div>
+}
+
+@code {
+    private decimal _amount;
+    private string? _note;
+    private bool _isSaving = false;
+
+    private async Task SaveExpenseAsync(Category category)
+    {
+        if (_amount <= 0) return;
+        
+        _isSaving = true;
+        var success = await ApiService.AddExpenseAsync(_amount, category, _note);
+        
+        if (success)
+        {
+            NavigationManager.NavigateTo("/");
+        }
+        else
+        {
+            _isSaving = false;
+            // Handle error silently or show a toast
+        }
+    }
+}

@@ -1,0 +1,76 @@
+@page "/"
+@using PulQatta.UI.DTOs
+@using PulQatta.UI.Services
+@inject IApiService ApiService
+@inject NavigationManager NavigationManager
+
+@if (_summary == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <div style="margin-bottom: 40px; margin-top: 20px;">
+        @{ var totalUsd = _summary.Total / 12800m; }
+        <h1 style="font-size: 2.5rem; margin-bottom: 4px;">@_summary.Total.ToString("N0") UZS</h1>
+        <h2 style="font-size: 1.5rem; color: #6B7280; margin-bottom: 4px;">$@totalUsd.ToString("N2")</h2>
+        <p class="text-muted-custom" style="font-weight: 600;">Today's total spent</p>
+    </div>
+
+    <div style="margin-bottom: 40px;">
+        <button class="btn-pill" style="width: 100%; font-size: 1.1rem;" @onclick='() => NavigationManager.NavigateTo("/add")'>
+            Добавить трату
+            <span class="icon-circle">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            </span>
+        </button>
+    </div>
+
+    <div style="margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px;">
+            <h3 style="font-size: 1.25rem;">Last Expenses</h3>
+            <a href="/month" class="text-muted-custom" style="font-size: 0.9rem; text-decoration: none; font-weight: 600;">Month Summary</a>
+        </div>
+        
+        @if (_summary.Expenses.Length == 0)
+        {
+            <p class="text-muted-custom">No expenses today.</p>
+        }
+        else
+        {
+            @foreach (var expense in _summary.Expenses)
+            {
+                <div class="expense-item">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 1.1rem;">@expense.Category.ToString()</div>
+                            @if (!string.IsNullOrEmpty(expense.Note))
+                            {
+                                <div class="text-muted-custom" style="font-size: 0.9rem; margin-top: 4px;">@expense.Note</div>
+                            }
+                        </div>
+                        <div style="text-align: right;">
+                            @{ var expUsd = expense.Amount / 12800m; }
+                            <div style="font-weight: 700; font-size: 1.1rem;">@expense.Amount.ToString("N0") UZS</div>
+                            <div class="text-muted-custom" style="font-size: 0.9rem;">$@expUsd.ToString("N2")</div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    private ExpenseTodaySummaryGetDto? _summary;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _summary = await ApiService.GetTodaySummaryAsync();
+        if (_summary == null)
+        {
+            // Fallback for development if API is unreachable
+            _summary = new ExpenseTodaySummaryGetDto { Total = 0 };
+        }
+    }
+}
