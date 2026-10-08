@@ -1,11 +1,45 @@
+using Microsoft.EntityFrameworkCore;
+using PulQatta.Api.Data;
+using PulQatta.Api.Services;
+using Telegram.Bot;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+builder.Configuration.AddJsonFile("appsettings.Secrets.json", optional: true, reloadOnChange: true);
 
+// Add services to the container.
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Configure Database
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Configure Services
+builder.Services.AddScoped<IExpenseService, ExpenseService>();
+builder.Services.AddSingleton<ITelegramAuthService, TelegramAuthService>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
+// Configure Telegram Bot Client
+builder.Services.AddHttpClient("telegram_bot_client")
+    .AddTypedClient<ITelegramBotClient>((httpClient, sp) =>
+    {
+        var botToken = builder.Configuration["TelegramBotToken"] ?? throw new InvalidOperationException("TelegramBotToken is not configured");
+        var options = new TelegramBotClientOptions(botToken);
+        return new TelegramBotClient(options, httpClient);
+    });
+
+builder.Services.AddHostedService<TelegramBotBackgroundService>();
 
 var app = builder.Build();
 
@@ -17,6 +51,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors();
 
 app.UseAuthorization();
 
