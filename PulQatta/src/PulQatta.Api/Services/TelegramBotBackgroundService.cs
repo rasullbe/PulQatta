@@ -118,7 +118,10 @@ public class TelegramBotBackgroundService : BackgroundService
 
                 var webAppKeyboard = new InlineKeyboardMarkup(new[]
                 {
-                    InlineKeyboardButton.WithWebApp("📱 Открыть Mini App", new WebAppInfo { Url = "https://localhost:7136" }) 
+                    // ВНИМАНИЕ: Telegram блокирует 'localhost'. Чтобы Mini App открывался у вас на компьютере, 
+                    // вам понадобится использовать Ngrok (или аналоги) и вставить сюда публичный HTTPS URL.
+                    // Для теста валидации мы временно ставим заглушку (например, google.com).
+                    InlineKeyboardButton.WithWebApp("📱 Открыть Mini App", new WebAppInfo { Url = "https://google.com" }) 
                 });
 
                 await botClient.SendTextMessageAsync(chatId, welcomeText, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
