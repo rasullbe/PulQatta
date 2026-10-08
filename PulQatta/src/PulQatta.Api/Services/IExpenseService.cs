@@ -10,4 +10,5 @@ public interface IExpenseService
     Task<List<ExpenseGetDto>> GetTodayExpensesAsync(long telegramId);
     Task<List<CategorySummaryGetDto>> GetMonthSummaryAsync(long telegramId);
     Task<bool> UndoLastExpenseAsync(long telegramId);
+    Task<bool> DeleteExpenseAsync(long telegramId, int id);
 }

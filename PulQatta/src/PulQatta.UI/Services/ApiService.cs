@@ -9,6 +9,7 @@ public interface IApiService
     Task<ExpenseTodaySummaryGetDto?> GetTodaySummaryAsync();
     Task<CategorySummaryGetDto[]> GetMonthSummaryAsync();
     Task<bool> AddExpenseAsync(decimal amount, Category category, string? note);
+    Task<bool> DeleteExpenseAsync(int id);
 }
 
 public class ApiService : IApiService
@@ -30,6 +31,7 @@ public class ApiService : IApiService
         {
             request.Headers.Add("X-Telegram-Init-Data", initData);
         }
+        
         return request;
     }
 
@@ -65,6 +67,13 @@ public class ApiService : IApiService
             Note = note
         });
         
+        var response = await _httpClient.SendAsync(request);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> DeleteExpenseAsync(int id)
+    {
+        var request = await CreateRequestAsync(HttpMethod.Delete, $"api/expenses/{id}");
         var response = await _httpClient.SendAsync(request);
         return response.IsSuccessStatusCode;
     }

@@ -1,34 +1,44 @@
-using PulQatta.Api.Entities;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using PulQatta.Api.Entities;
 
 namespace PulQatta.Api.Services;
 
 public class TelegramBotBackgroundService : BackgroundService
 {
-    private readonly ITelegramBotClient _botClient;
-    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<TelegramBotBackgroundService> _logger;
+    private readonly IConfiguration _configuration;
+    private readonly IServiceProvider _serviceProvider;
+    private TelegramBotClient? _botClient;
 
     public TelegramBotBackgroundService(
-        ITelegramBotClient botClient,
-        IServiceProvider serviceProvider,
-        ILogger<TelegramBotBackgroundService> logger)
+        ILogger<TelegramBotBackgroundService> logger,
+        IConfiguration configuration,
+        IServiceProvider serviceProvider)
     {
-        _botClient = botClient;
-        _serviceProvider = serviceProvider;
         _logger = logger;
+        _configuration = configuration;
+        _serviceProvider = serviceProvider;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var token = _configuration["Telegram:BotToken"];
+        if (string.IsNullOrEmpty(token))
+        {
+            _logger.LogError("Telegram Bot Token is not configured.");
+            return;
+        }
+
+        _botClient = new TelegramBotClient(token);
+
         var receiverOptions = new ReceiverOptions
         {
-            AllowedUpdates = Array.Empty<UpdateType>() // receive all update types
+            AllowedUpdates = Array.Empty<UpdateType>() // Receive all update types
         };
 
         _botClient.StartReceiving(
@@ -40,65 +50,65 @@ public class TelegramBotBackgroundService : BackgroundService
 
         _logger.LogInformation("Telegram Bot started receiving updates.");
 
-        // Keep the background service running
-        try
-        {
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                await Task.Delay(1000, stoppingToken);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected during shutdown
-        }
+        // Keep the service running
+        await Task.Delay(Timeout.Infinite, stoppingToken);
     }
 
     private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
     {
-        if (update.Type == UpdateType.Message && update.Message!.Type == MessageType.Text)
-        {
-            await HandleMessageAsync(botClient, update.Message, cancellationToken);
-            return;
-        }
-
         if (update.Type == UpdateType.CallbackQuery)
         {
             await HandleCallbackQueryAsync(botClient, update.CallbackQuery!, cancellationToken);
             return;
         }
-    }
 
-    private async Task HandleMessageAsync(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
-    {
+        if (update.Type != UpdateType.Message || update.Message!.Type != MessageType.Text)
+            return;
+
+        var message = update.Message;
         var text = message.Text!;
         var chatId = message.Chat.Id;
         var telegramId = message.From!.Id;
 
-        using var scope = _serviceProvider.CreateScope();
-        var expenseService = scope.ServiceProvider.GetRequiredService<IExpenseService>();
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var expenseService = scope.ServiceProvider.GetRequiredService<IExpenseService>();
 
-        if (text.StartsWith("/"))
-        {
-            await HandleCommandAsync(botClient, message, chatId, telegramId, text, expenseService, cancellationToken);
-            return;
+            if (text.StartsWith("/"))
+            {
+                await HandleCommandAsync(botClient, message, chatId, telegramId, text, expenseService, cancellationToken);
+            }
+            else
+            {
+                // Попытка разобрать трату
+                var parts = text.Split(' ', 2);
+                if (decimal.TryParse(parts[0], out var amount))
+                {
+                    var note = parts.Length > 1 ? parts[1] : null;
+                    await SendCategoryKeyboardAsync(botClient, chatId, amount, note, cancellationToken);
+                }
+                else
+                {
+                    await botClient.SendTextMessageAsync(chatId, "Не понял сумму. Введите число (например, 15000).", cancellationToken: cancellationToken);
+                }
+            }
         }
-
-        // Parse expense format "amount [note]"
-        var parts = text.Split(' ', 2);
-        if (decimal.TryParse(parts[0], out var amount))
+        catch (Exception ex)
         {
-            var note = parts.Length > 1 ? parts[1] : null;
-            await SendCategoryKeyboardAsync(botClient, chatId, amount, note, cancellationToken);
-        }
-        else
-        {
-            await botClient.SendTextMessageAsync(chatId, "Please send in format: <amount> <note>", cancellationToken: cancellationToken);
+            _logger.LogError(ex, "Error handling message");
+            await botClient.SendTextMessageAsync(chatId, "Произошла ошибка при обработке команды.", cancellationToken: cancellationToken);
         }
     }
 
     private async Task HandleCommandAsync(ITelegramBotClient botClient, Message message, long chatId, long telegramId, string text, IExpenseService expenseService, CancellationToken cancellationToken)
     {
+        var webAppUrl = "https://localhost:7136";
+        var webAppKeyboard = new InlineKeyboardMarkup(new[]
+        {
+            InlineKeyboardButton.WithWebApp("📱 Открыть Mini App", new WebAppInfo { Url = webAppUrl }) 
+        });
+
         switch (text.ToLower())
         {
             case "/start":
@@ -114,13 +124,7 @@ public class TelegramBotBackgroundService : BackgroundService
 📊 *Доступные команды:*
 /today — твои траты за сегодня
 /month — итоги за текущий месяц
-/undo — удалить твою последнюю добавленную трату";
-
-                var webAppUrl = "https://your-ngrok-url.ngrok-free.app"; // Замените на ваш публичный URL
-                var webAppKeyboard = new InlineKeyboardMarkup(new[]
-                {
-                    InlineKeyboardButton.WithWebApp("📱 Открыть Mini App", new WebAppInfo { Url = webAppUrl }) 
-                });
+/undo — отменить последнюю трату";
 
                 await botClient.SendTextMessageAsync(chatId, welcomeText, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
                 break;
@@ -130,14 +134,19 @@ public class TelegramBotBackgroundService : BackgroundService
                 var expenses = await expenseService.GetTodayExpensesAsync(telegramId);
                 
                 var totalUsd = total / 12800m;
-                var response = $"📅 *Траты за сегодня*\nИтого: {total:N0} UZS (${totalUsd:N2})\n\n";
+                var totalFmt = total.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
+                var totalUsdFmt = totalUsd.ToString("N2", new System.Globalization.CultureInfo("en-US"));
+                
+                var response = $"📅 *Траты за сегодня*\nИтого: {totalFmt} UZS (${totalUsdFmt})\n\n";
                 foreach (var exp in expenses)
                 {
                     var expUsd = exp.Amount / 12800m;
-                    response += $"- {exp.Amount:N0} UZS (${expUsd:N2}) ({exp.Category}) {exp.Note}\n";
+                    var expFmt = exp.Amount.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
+                    var expUsdFmt = expUsd.ToString("N2", new System.Globalization.CultureInfo("en-US"));
+                    response += $"- {expFmt} UZS (${expUsdFmt}) ({GetCategoryName(exp.Category)}) {exp.Note}\n";
                 }
                 
-                await botClient.SendTextMessageAsync(chatId, response, parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);
+                await botClient.SendTextMessageAsync(chatId, response, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
                 break;
                 
             case "/month":
@@ -145,19 +154,24 @@ public class TelegramBotBackgroundService : BackgroundService
                 var monthTotal = summary.Sum(s => s.TotalAmount);
                 var monthTotalUsd = monthTotal / 12800m;
                 
-                var monthResponse = $"📊 *Итоги за месяц*\nВсего: {monthTotal:N0} UZS (${monthTotalUsd:N2})\n\n";
+                var monthTotalFmt = monthTotal.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
+                var monthTotalUsdFmt = monthTotalUsd.ToString("N2", new System.Globalization.CultureInfo("en-US"));
+
+                var monthResponse = $"📊 *Итоги за месяц*\nВсего: {monthTotalFmt} UZS (${monthTotalUsdFmt})\n\n";
                 foreach (var cat in summary)
                 {
                     var catUsd = cat.TotalAmount / 12800m;
-                    monthResponse += $"- {cat.Category}: {cat.TotalAmount:N0} UZS (${catUsd:N2})\n";
+                    var catFmt = cat.TotalAmount.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
+                    var catUsdFmt = catUsd.ToString("N2", new System.Globalization.CultureInfo("en-US"));
+                    monthResponse += $"- {GetCategoryName(cat.Category)}: {catFmt} UZS (${catUsdFmt})\n";
                 }
                 
-                await botClient.SendTextMessageAsync(chatId, monthResponse, parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);
+                await botClient.SendTextMessageAsync(chatId, monthResponse, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
                 break;
                 
             case "/undo":
                 var success = await expenseService.UndoLastExpenseAsync(telegramId);
-                var msg = success ? "Last expense deleted." : "No expenses found to delete.";
+                var msg = success ? "✅ Последняя трата отменена." : "❌ Нет трат для отмены.";
                 await botClient.SendTextMessageAsync(chatId, msg, cancellationToken: cancellationToken);
                 break;
                 
@@ -177,12 +191,12 @@ public class TelegramBotBackgroundService : BackgroundService
             var row = new List<InlineKeyboardButton>();
             
             var cat1 = categories[i];
-            row.Add(InlineKeyboardButton.WithCallbackData(cat1.ToString(), $"add_{amount}_{cat1}_{note}"));
+            row.Add(InlineKeyboardButton.WithCallbackData(GetCategoryName(cat1), $"add_{amount}_{cat1}_{note}"));
             
             if (i + 1 < categories.Length)
             {
                 var cat2 = categories[i + 1];
-                row.Add(InlineKeyboardButton.WithCallbackData(cat2.ToString(), $"add_{amount}_{cat2}_{note}"));
+                row.Add(InlineKeyboardButton.WithCallbackData(GetCategoryName(cat2), $"add_{amount}_{cat2}_{note}"));
             }
             
             keyboardButtons.Add(row.ToArray());
@@ -191,9 +205,12 @@ public class TelegramBotBackgroundService : BackgroundService
         var inlineKeyboard = new InlineKeyboardMarkup(keyboardButtons);
         
         var usdAmount = amount / 12800m;
+        var amountFmt = amount.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
+        var usdFmt = usdAmount.ToString("N2", new System.Globalization.CultureInfo("en-US"));
+
         await botClient.SendTextMessageAsync(
             chatId: chatId,
-            text: $"Выберите категорию для {amount:N0} UZS (${usdAmount:N2}){(note != null ? $" ({note})" : "")}:",
+            text: $"Выберите категорию для {amountFmt} UZS (${usdFmt}){(note != null ? $" ({note})" : "")}:",
             replyMarkup: inlineKeyboard,
             cancellationToken: cancellationToken
         );
@@ -202,36 +219,89 @@ public class TelegramBotBackgroundService : BackgroundService
     private async Task HandleCallbackQueryAsync(ITelegramBotClient botClient, CallbackQuery callbackQuery, CancellationToken cancellationToken)
     {
         var data = callbackQuery.Data;
-        if (data == null || !data.StartsWith("add_")) return;
+        if (data == null) return;
 
-        var parts = data.Split('_');
-        if (parts.Length < 3) return;
-
-        var amountStr = parts[1];
-        var categoryStr = parts[2];
-        var note = parts.Length > 3 ? string.Join("_", parts.Skip(3)) : null;
-
-        if (decimal.TryParse(amountStr, out var amount) && Enum.TryParse<Category>(categoryStr, out var category))
+        if (data == "undo_last")
         {
             var telegramId = callbackQuery.From.Id;
-            
             using var scope = _serviceProvider.CreateScope();
             var expenseService = scope.ServiceProvider.GetRequiredService<IExpenseService>();
             
-            await expenseService.AddExpenseAsync(telegramId, amount, category, string.IsNullOrEmpty(note) ? null : note);
-
+            var success = await expenseService.UndoLastExpenseAsync(telegramId);
+            
             await botClient.AnswerCallbackQueryAsync(
                 callbackQueryId: callbackQuery.Id,
-                text: "Трата сохранена!",
+                text: success ? "Трата отменена!" : "Нечего отменять.",
                 cancellationToken: cancellationToken);
 
-            var usdAmount = amount / 12800m;
-            await botClient.EditMessageTextAsync(
-                chatId: callbackQuery.Message!.Chat.Id,
-                messageId: callbackQuery.Message.MessageId,
-                text: $"✅ Сохранено: {amount:N0} UZS (${usdAmount:N2}) в категорию {category}{(string.IsNullOrEmpty(note) ? "" : $" ({note})")}",
-                cancellationToken: cancellationToken);
+            if (success)
+            {
+                await botClient.EditMessageTextAsync(
+                    chatId: callbackQuery.Message!.Chat.Id,
+                    messageId: callbackQuery.Message.MessageId,
+                    text: $"🗑 Трата была успешно отменена.",
+                    cancellationToken: cancellationToken);
+            }
+            return;
         }
+
+        if (data.StartsWith("add_"))
+        {
+            var parts = data.Split('_');
+            if (parts.Length < 3) return;
+
+            var amountStr = parts[1];
+            var categoryStr = parts[2];
+            var note = parts.Length > 3 ? string.Join("_", parts.Skip(3)) : null;
+
+            if (decimal.TryParse(amountStr, out var amount) && Enum.TryParse<Category>(categoryStr, out var category))
+            {
+                var telegramId = callbackQuery.From.Id;
+                
+                using var scope = _serviceProvider.CreateScope();
+                var expenseService = scope.ServiceProvider.GetRequiredService<IExpenseService>();
+                
+                await expenseService.AddExpenseAsync(telegramId, amount, category, string.IsNullOrEmpty(note) ? null : note);
+
+                await botClient.AnswerCallbackQueryAsync(
+                    callbackQueryId: callbackQuery.Id,
+                    text: "Трата сохранена!",
+                    cancellationToken: cancellationToken);
+
+                var usdAmount = amount / 12800m;
+                var amountFmt = amount.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
+                var usdFmt = usdAmount.ToString("N2", new System.Globalization.CultureInfo("en-US"));
+                
+                var undoKeyboard = new InlineKeyboardMarkup(new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("❌ Отменить", "undo_last")
+                });
+
+                await botClient.EditMessageTextAsync(
+                    chatId: callbackQuery.Message!.Chat.Id,
+                    messageId: callbackQuery.Message.MessageId,
+                    text: $"✅ Сохранено: {amountFmt} UZS (${usdFmt}) в категорию {GetCategoryName(category)}{(string.IsNullOrEmpty(note) ? "" : $" ({note})")}",
+                    replyMarkup: undoKeyboard,
+                    cancellationToken: cancellationToken);
+            }
+        }
+    }
+
+    private string GetCategoryName(Category category)
+    {
+        return category switch
+        {
+            Category.Food => "🍔 Еда",
+            Category.Transport => "🚕 Транспорт",
+            Category.Utilities => "💡 Коммуналка",
+            Category.Health => "💊 Здоровье",
+            Category.Subscriptions => "🔄 Подписки",
+            Category.Games => "🎮 Игры",
+            Category.Clothes => "👕 Одежда",
+            Category.Electronics => "💻 Техника",
+            Category.Cafe => "☕ Кафе",
+            _ => "📦 Другое"
+        };
     }
 
     private Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)

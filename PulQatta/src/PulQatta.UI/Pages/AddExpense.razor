@@ -1,53 +1,78 @@
 @page "/add"
 @using PulQatta.UI.DTOs
-@using PulQatta.UI.Entities
 @using PulQatta.UI.Services
+@using PulQatta.UI.Entities
 @inject IApiService ApiService
 @inject NavigationManager NavigationManager
 
-<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 32px; margin-top: 12px;">
-    <button @onclick='() => NavigationManager.NavigateTo("/")' style="background: none; border: none; cursor: pointer; padding: 0;">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-    </button>
-    <h2 style="margin: 0; font-size: 1.5rem;">Add Expense</h2>
+<div class="section-header">
+    <a href="/" class="section-link"><span class="text-italic-accent" style="font-size: 1.2rem; margin-right: 4px;">&larr;</span> Назад</a>
+    <h3 class="section-title">Новая трата.</h3>
 </div>
 
-<div style="margin-bottom: 24px;">
-    <input type="number" class="form-control-custom" placeholder="Amount" @bind="_amount" @bind:event="oninput" style="margin-bottom: 16px;" />
-    
-    <input type="text" class="form-control-custom" placeholder="Note (optional)" @bind="_note" style="font-size: 1.1rem; font-weight: 400; border-bottom: 1px solid #E5E7EB;" />
-</div>
+<div class="animate-fade-up animate-delay-1" style="margin-top: 40px;">
+    <input type="text" 
+           inputmode="numeric" 
+           class="modern-input" 
+           placeholder="0" 
+           @bind="AmountText" 
+           @bind:event="oninput" />
 
-<div>
-    <p class="text-muted-custom" style="font-weight: 600; margin-bottom: 8px;">Select Category to Save</p>
-    <div class="category-grid">
-        @foreach (var category in Enum.GetValues<Category>())
-        {
-            <button class="category-btn" disabled="@(_amount <= 0 || _isSaving)" @onclick="() => SaveExpenseAsync(category)">
-                @category.ToString()
-            </button>
-        }
-    </div>
+    <input type="text" 
+           class="modern-input note-input" 
+           placeholder="Заметка (необязательно)" 
+           @bind="_note" />
 </div>
 
 @if (_isSaving)
 {
-    <div style="margin-top: 24px; text-align: center;" class="text-muted-custom">
-        Saving...
+    <div class="animate-fade-up animate-delay-2" style="margin-top: 40px;">
+        <p class="subtitle">Сохранение...</p>
+    </div>
+}
+else
+{
+    <div class="category-grid animate-fade-up animate-delay-2">
+        @foreach (var cat in Enum.GetValues<Category>())
+        {
+            <button class="category-btn" @onclick="() => SaveExpense(cat)">
+                <span>@GetCategoryName(cat)</span>
+            </button>
+        }
     </div>
 }
 
 @code {
-    private decimal _amount;
+    private decimal? _amount;
     private string? _note;
     private bool _isSaving = false;
 
-    private async Task SaveExpenseAsync(Category category)
+    private string AmountText
     {
-        if (_amount <= 0) return;
-        
+        get => _amount?.ToString("N0", new System.Globalization.CultureInfo("de-DE")) ?? "";
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                _amount = null;
+            }
+            else
+            {
+                var clean = value.Replace(".", "").Replace(" ", "");
+                if (decimal.TryParse(clean, out var val))
+                    _amount = val;
+            }
+        }
+    }
+
+    private async Task SaveExpense(Category category)
+    {
+        if (_amount == null || _amount <= 0) return;
+
         _isSaving = true;
-        var success = await ApiService.AddExpenseAsync(_amount, category, _note);
+        StateHasChanged();
+
+        var success = await ApiService.AddExpenseAsync(_amount.Value, category, _note);
         
         if (success)
         {
@@ -56,7 +81,23 @@
         else
         {
             _isSaving = false;
-            // Handle error silently or show a toast
         }
+    }
+
+    private string GetCategoryName(Category category)
+    {
+        return category switch
+        {
+            Category.Food => "Еда",
+            Category.Transport => "Транспорт",
+            Category.Utilities => "Жилье",
+            Category.Health => "Здоровье",
+            Category.Subscriptions => "Подписки",
+            Category.Games => "Игры",
+            Category.Clothes => "Одежда",
+            Category.Electronics => "Техника",
+            Category.Cafe => "Кафе",
+            _ => "Другое"
+        };
     }
 }

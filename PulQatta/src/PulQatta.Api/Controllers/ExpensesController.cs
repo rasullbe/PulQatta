@@ -23,7 +23,9 @@ public class ExpensesController : ControllerBase
         telegramId = 0;
         if (!Request.Headers.TryGetValue("X-Telegram-Init-Data", out var initData))
         {
-            return false;
+            // Для локального тестирования UI в браузере (без Telegram)
+            telegramId = 111111111; // Фейковый ID
+            return true;
         }
 
         return _telegramAuthService.ValidateInitData(initData.ToString(), out telegramId);
@@ -56,5 +58,16 @@ public class ExpensesController : ControllerBase
 
         var expense = await _expenseService.AddExpenseAsync(telegramId, request.Amount, request.Category, request.Note);
         return Ok(expense);
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteExpense(int id)
+    {
+        if (!TryGetTelegramId(out var telegramId)) return Unauthorized();
+
+        var success = await _expenseService.DeleteExpenseAsync(telegramId, id);
+        if (!success) return NotFound();
+
+        return NoContent();
     }
 }

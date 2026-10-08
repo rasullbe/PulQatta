@@ -117,4 +117,17 @@ public class ExpenseService : IExpenseService
         await _context.SaveChangesAsync();
         return true;
     }
+
+    public async Task<bool> DeleteExpenseAsync(long telegramId, int id)
+    {
+        var expense = await _context.Expenses
+            .Include(e => e.User)
+            .FirstOrDefaultAsync(e => e.Id == id && e.User!.TelegramId == telegramId);
+
+        if (expense == null) return false;
+
+        _context.Expenses.Remove(expense);
+        await _context.SaveChangesAsync();
+        return true;
+    }
 }
