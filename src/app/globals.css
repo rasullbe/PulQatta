@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-color: #F7F5F0;
+    --text-color: #111111;
+    --text-muted: #666666;
+    --card-bg: #FFFFFF;
+    --accent: #000000;
+    --accent-hover: #222222;
+    --danger: #FF3B30;
+    --border-radius: 20px;
+  }
+
+  body.tg-dark {
+    --bg-color: var(--tg-theme-bg-color, #1c1c1d);
+    --text-color: var(--tg-theme-text-color, #ffffff);
+    --text-muted: var(--tg-theme-hint-color, #999999);
+    --card-bg: var(--tg-theme-secondary-bg-color, #2c2c2e);
+    --accent: var(--tg-theme-button-color, #ffffff);
+    --accent-hover: #eeeeee;
+  }
+
+  body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Outfit', sans-serif;
+    padding: 20px;
+    transition: background-color 0.3s ease;
+    overflow-x: hidden;
+  }
+}
+
+@layer utilities {
+  .numbers {
+    font-family: 'Space Grotesk', sans-serif;
+    letter-spacing: -0.5px;
+  }
+}
+
+.loader-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--bg-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    transition: opacity 0.5s ease;
+}
+
+.loader-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(0,0,0,0.1);
+    border-radius: 50%;
+    border-top-color: var(--accent);
+    animation: spin 1s ease-in-out infinite;
+}
+body.tg-dark .spinner {
+    border: 3px solid rgba(255,255,255,0.1);
+    border-top-color: var(--accent);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
