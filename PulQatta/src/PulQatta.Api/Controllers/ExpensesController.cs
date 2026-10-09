@@ -22,11 +22,7 @@ public class ExpensesController : ControllerBase
     {
         telegramId = 0;
         if (!Request.Headers.TryGetValue("X-Telegram-Init-Data", out var initData))
-        {
-            // Для локального тестирования UI в браузере (без Telegram)
-            telegramId = 111111111; // Фейковый ID
-            return true;
-        }
+            return false;
 
         return _telegramAuthService.ValidateInitData(initData.ToString(), out telegramId);
     }
@@ -71,3 +67,4 @@ public class ExpensesController : ControllerBase
         return NoContent();
     }
 }
+

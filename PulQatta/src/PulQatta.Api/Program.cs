@@ -14,7 +14,7 @@ builder.Services.AddSwaggerGen();
 
 // Configure Database
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
 // Configure Services
 builder.Services.AddScoped<IUserService, UserService>();
@@ -28,9 +28,10 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        var frontendOrigin = builder.Configuration["FRONTEND_ORIGIN"] ?? "https://pulqatta.netlify.app";
+        policy.WithOrigins(frontendOrigin)
+              .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+              .WithHeaders("Content-Type", "X-Telegram-Init-Data");
     });
 });
 
@@ -38,12 +39,18 @@ builder.Services.AddCors(options =>
 builder.Services.AddHttpClient("telegram_bot_client")
     .AddTypedClient<ITelegramBotClient>((httpClient, sp) =>
     {
-        var botToken = builder.Configuration["TelegramBotToken"] ?? throw new InvalidOperationException("TelegramBotToken is not configured");
+        var botToken = builder.Configuration["BOT_TOKEN"] ?? builder.Configuration["TelegramBotToken"] ?? throw new InvalidOperationException("BOT_TOKEN is not configured");
         var options = new TelegramBotClientOptions(botToken);
         return new TelegramBotClient(options, httpClient);
     });
 
 builder.Services.AddHostedService<TelegramBotBackgroundService>();
+
+var port = builder.Configuration["PORT"];
+if (!string.IsNullOrEmpty(port))
+{
+    builder.WebHost.UseUrls($"http://*:{port}");
+}
 
 var app = builder.Build();
 
@@ -53,6 +60,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 app.UseHttpsRedirection();
 

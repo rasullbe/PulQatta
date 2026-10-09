@@ -11,20 +11,9 @@ public class TelegramAuthService : ITelegramAuthService
 
     public TelegramAuthService(IConfiguration configuration)
     {
-        _botToken = configuration["TelegramBotToken"] ?? throw new InvalidOperationException("TelegramBotToken not configured");
+        _botToken = configuration["BOT_TOKEN"] ?? configuration["TelegramBotToken"] ?? throw new InvalidOperationException("BOT_TOKEN not configured");
     }
 
-    /*
-     * Telegram WebApp Data Validation Process:
-     * 1. The initData string contains several key-value pairs separated by '&'.
-     * 2. We extract the 'hash' value which is the signature provided by Telegram.
-     * 3. We sort the remaining key-value pairs alphabetically by key.
-     * 4. We join the sorted pairs with a newline character ('\n') to create a data check string.
-     * 5. We create a secret key by hashing the bot token with HMAC-SHA256 using the literal string "WebAppData" as the key.
-     * 6. We hash our data check string with HMAC-SHA256 using the secret key from step 5.
-     * 7. Finally, we convert our calculated hash to a hex string and compare it with the 'hash' from step 2.
-     *    If they match, the data is valid and was definitely sent by Telegram.
-     */
     public bool ValidateInitData(string initData, out long telegramId)
     {
         telegramId = 0;
@@ -33,9 +22,23 @@ public class TelegramAuthService : ITelegramAuthService
 
         var parsedData = HttpUtility.ParseQueryString(initData);
         var hash = parsedData["hash"];
-        if (string.IsNullOrEmpty(hash)) return false;
+        var authDateStr = parsedData["auth_date"];
+        
+        if (string.IsNullOrEmpty(hash) || string.IsNullOrEmpty(authDateStr)) return false;
 
-        // Remove hash from the parameters to calculate our own signature
+        if (long.TryParse(authDateStr, out var authDateUnix))
+        {
+            var authDate = DateTimeOffset.FromUnixTimeSeconds(authDateUnix);
+            if ((DateTimeOffset.UtcNow - authDate).TotalHours > 24)
+            {
+                return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+
         var dataDict = new SortedDictionary<string, string>();
         foreach (string key in parsedData.Keys)
         {
@@ -52,9 +55,10 @@ public class TelegramAuthService : ITelegramAuthService
 
         using var hmacData = new HMACSHA256(secretKey);
         var calculatedHashBytes = hmacData.ComputeHash(Encoding.UTF8.GetBytes(dataCheckString));
-        var calculatedHash = Convert.ToHexString(calculatedHashBytes).ToLower();
+        
+        var providedHashBytes = Convert.FromHexString(hash);
 
-        if (calculatedHash != hash)
+        if (!CryptographicOperations.FixedTimeEquals(calculatedHashBytes, providedHashBytes))
         {
             return false;
         }
