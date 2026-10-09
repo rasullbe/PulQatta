@@ -1,31 +1,301 @@
-html {
-  font-size: 14px;
+/* Base Styles & Resets */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
 }
 
-@media (min-width: 768px) {
-  html {
-    font-size: 16px;
-  }
+:root {
+    --bg-color: #F7F5F0;
+    --text-color: #111111;
+    --text-muted: #666666;
+    --card-bg: #FFFFFF;
+    --accent: #000000;
+    --accent-hover: #222222;
+    --danger: #FF3B30;
+    --border-radius: 20px;
 }
 
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
-}
-
-html {
-  position: relative;
-  min-height: 100%;
+/* Dynamic Telegram Theme Support (Optional, but fallback is our custom theme) */
+body.tg-dark {
+    --bg-color: var(--tg-theme-bg-color, #1c1c1d);
+    --text-color: var(--tg-theme-text-color, #ffffff);
+    --text-muted: var(--tg-theme-hint-color, #999999);
+    --card-bg: var(--tg-theme-secondary-bg-color, #2c2c2e);
+    --accent: var(--tg-theme-button-color, #ffffff);
+    --accent-hover: #eeeeee;
 }
 
 body {
-  margin-bottom: 60px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    padding: 20px;
+    transition: background-color 0.3s ease;
+    overflow-x: hidden;
 }
 
-.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
-  color: var(--bs-secondary-color);
-  text-align: end;
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    margin-bottom: 0.5rem;
 }
 
-.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
-  text-align: start;
+.numbers {
+    font-family: 'Space Grotesk', sans-serif;
+    letter-spacing: -0.5px;
+}
+
+/* App Container */
+.app-container {
+    max-width: 600px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    opacity: 0;
+    animation: fadeIn 0.8s forwards;
+}
+
+@keyframes fadeIn {
+    to { opacity: 1; }
+}
+
+/* Header Section */
+.header-section {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.total-title {
+    font-size: 1rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.total-amount {
+    font-size: 3.5rem;
+    font-weight: 700;
+    margin-top: 5px;
+}
+
+.currency {
+    font-size: 1.5rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    font-family: 'Outfit', sans-serif; /* Keep currency simple */
+}
+
+/* Add Expense Form */
+.add-expense-card {
+    background: var(--card-bg);
+    border-radius: var(--border-radius);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+    transform: translateY(20px);
+    opacity: 0;
+    animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
+}
+
+@keyframes slideUp {
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.input-group label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+input, select {
+    width: 100%;
+    background: var(--bg-color);
+    border: none;
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 1rem;
+    font-family: 'Outfit', sans-serif;
+    color: var(--text-color);
+    outline: none;
+    transition: box-shadow 0.2s ease;
+}
+
+input:focus, select:focus {
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+input[type="number"] {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+/* Button */
+.btn-primary {
+    background: var(--accent);
+    color: var(--bg-color);
+    border: none;
+    border-radius: 100px;
+    padding: 18px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: 'Outfit', sans-serif;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-primary:active {
+    transform: scale(0.96);
+    background: var(--accent-hover);
+}
+
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Expenses List */
+.expenses-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.section-title {
+    font-size: 1.2rem;
+    margin-bottom: 8px;
+    opacity: 0;
+    animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.4s forwards;
+}
+
+.expense-item {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.expense-item.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.expense-item.removing {
+    opacity: 0;
+    transform: translateX(100px);
+}
+
+.expense-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.expense-emoji {
+    font-size: 1.5rem;
+    background: var(--bg-color);
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+}
+
+.expense-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.expense-note {
+    font-weight: 600;
+    font-size: 1.05rem;
+}
+
+.expense-cat {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.expense-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.expense-amount {
+    font-weight: 700;
+    font-size: 1.15rem;
+}
+
+.delete-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 50%;
+    transition: color 0.2s, background 0.2s;
+}
+
+.delete-btn:active {
+    color: var(--danger);
+    background: rgba(255, 59, 48, 0.1);
+}
+
+/* Loading Overlay */
+.loader-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--bg-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    transition: opacity 0.5s ease;
+}
+
+.loader-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(0,0,0,0.1);
+    border-radius: 50%;
+    border-top-color: var(--accent);
+    animation: spin 1s ease-in-out infinite;
+}
+body.tg-dark .spinner {
+    border: 3px solid rgba(255,255,255,0.1);
+    border-top-color: var(--accent);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
