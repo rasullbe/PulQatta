@@ -33,7 +33,7 @@ public class TelegramCommandHandler : ITelegramCommandHandler
 
     private async Task ProcessSlashCommandAsync(ITelegramBotClient botClient, Message message, long chatId, long telegramId, string text, CancellationToken cancellationToken)
     {
-        var webAppUrl = "https://b39d604efdbed7.lhr.life";
+        var webAppUrl = "https://2012cd9123ca93.lhr.life";
         var webAppKeyboard = new InlineKeyboardMarkup(new[]
         {
             InlineKeyboardButton.WithWebApp("📱 Открыть Mini App", new WebAppInfo { Url = webAppUrl }) 
@@ -177,3 +177,4 @@ public class TelegramCommandHandler : ITelegramCommandHandler
         };
     }
 }
+
