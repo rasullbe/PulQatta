@@ -17,7 +17,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Configure Services
+builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IExpenseService, ExpenseService>();
+builder.Services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
+builder.Services.AddScoped<ITelegramCommandHandler, TelegramCommandHandler>();
+builder.Services.AddScoped<ITelegramCallbackHandler, TelegramCallbackHandler>();
 builder.Services.AddSingleton<ITelegramAuthService, TelegramAuthService>();
 
 builder.Services.AddCors(options =>

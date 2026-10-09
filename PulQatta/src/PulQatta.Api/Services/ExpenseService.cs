@@ -8,31 +8,17 @@ namespace PulQatta.Api.Services;
 public class ExpenseService : IExpenseService
 {
     private readonly AppDbContext _context;
+    private readonly IUserService _userService;
 
-    public ExpenseService(AppDbContext context)
+    public ExpenseService(AppDbContext context, IUserService userService)
     {
         _context = context;
-    }
-
-    private async Task<User> GetOrCreateUserAsync(long telegramId)
-    {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.TelegramId == telegramId);
-        if (user == null)
-        {
-            user = new User
-            {
-                TelegramId = telegramId,
-                CreatedAt = DateTime.UtcNow
-            };
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync();
-        }
-        return user;
+        _userService = userService;
     }
 
     public async Task<ExpenseGetDto> AddExpenseAsync(long telegramId, decimal amount, Category category, string? note)
     {
-        var user = await GetOrCreateUserAsync(telegramId);
+        var user = await _userService.GetOrCreateUserAsync(telegramId);
 
         var expense = new Expense
         {
