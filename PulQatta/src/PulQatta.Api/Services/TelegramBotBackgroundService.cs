@@ -32,6 +32,24 @@ public class TelegramBotBackgroundService : BackgroundService
 
         _botClient = new TelegramBotClient(token);
 
+        try
+        {
+            var webAppUrl = _configuration["FRONTEND_ORIGIN"] ?? "https://sparkly-flan-a1ad41.netlify.app/";
+            await _botClient.SetChatMenuButtonAsync(
+                menuButton: new Telegram.Bot.Types.MenuButtonWebApp
+                {
+                    Text = "PulQatta",
+                    WebApp = new Telegram.Bot.Types.WebAppInfo { Url = webAppUrl }
+                },
+                cancellationToken: stoppingToken
+            );
+            _logger.LogInformation("Telegram Chat Menu Button updated to {Url}", webAppUrl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to update Telegram Chat Menu Button.");
+        }
+
         var receiverOptions = new ReceiverOptions
         {
             AllowedUpdates = Array.Empty<UpdateType>()

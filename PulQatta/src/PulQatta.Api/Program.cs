@@ -8,7 +8,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Secrets.json", optional: true, reloadOnChange: true);
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -28,10 +32,20 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        var frontendOrigin = builder.Configuration["FRONTEND_ORIGIN"] ?? "http://localhost:3000";
-        policy.WithOrigins(frontendOrigin)
+        var configuredOrigin = builder.Configuration["FRONTEND_ORIGIN"];
+        var origins = new List<string>
+        {
+            "https://sparkly-flan-a1ad41.netlify.app",
+            "http://localhost:3000"
+        };
+        if (!string.IsNullOrWhiteSpace(configuredOrigin) && !origins.Contains(configuredOrigin.TrimEnd('/')))
+        {
+            origins.Add(configuredOrigin.TrimEnd('/'));
+        }
+
+        policy.WithOrigins(origins.ToArray())
               .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-              .WithHeaders("Content-Type", "X-Telegram-Init-Data");
+              .WithHeaders("Content-Type", "X-Telegram-Init-Data", "X-Telegram-User-Id");
     });
 });
 
@@ -63,7 +77,14 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
-app.UseHttpsRedirection();
+app.Use(async (context, next) =>
+{
+    if (context.Request.Headers.ContainsKey("Access-Control-Request-Private-Network"))
+    {
+        context.Response.Headers["Access-Control-Allow-Private-Network"] = "true";
+    }
+    await next();
+});
 
 app.UseCors();
 

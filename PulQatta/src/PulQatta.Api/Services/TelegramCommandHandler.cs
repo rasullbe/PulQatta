@@ -33,7 +33,7 @@ public class TelegramCommandHandler : ITelegramCommandHandler
 
     private async Task ProcessSlashCommandAsync(ITelegramBotClient botClient, Message message, long chatId, long telegramId, string text, CancellationToken cancellationToken)
     {
-        var webAppUrl = "https://lqaqd-213-230-78-239.free.pinggy.net";
+        var webAppUrl = "https://sparkly-flan-a1ad41.netlify.app/";
         var webAppKeyboard = new InlineKeyboardMarkup(new[]
         {
             InlineKeyboardButton.WithWebApp("📱 Открыть Mini App", new WebAppInfo { Url = webAppUrl }) 

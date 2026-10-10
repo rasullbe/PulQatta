@@ -58,7 +58,7 @@ public class ExpenseService : IExpenseService
             .Include(e => e.User)
             .Where(e => e.User!.TelegramId == telegramId && e.CreatedAt >= today)
             .OrderByDescending(e => e.CreatedAt)
-            .Take(5)
+            .Take(50)
             .Select(e => new ExpenseGetDto
             {
                 Id = e.Id,
@@ -115,5 +115,29 @@ public class ExpenseService : IExpenseService
         _context.Expenses.Remove(expense);
         await _context.SaveChangesAsync();
         return true;
+    }
+
+    public async Task<ExpenseGetDto?> UpdateExpenseAsync(long telegramId, int id, decimal amount, Category category, string? note)
+    {
+        var expense = await _context.Expenses
+            .Include(e => e.User)
+            .FirstOrDefaultAsync(e => e.Id == id && e.User!.TelegramId == telegramId);
+
+        if (expense == null) return null;
+
+        expense.Amount = amount;
+        expense.Category = category;
+        expense.Note = note;
+
+        await _context.SaveChangesAsync();
+
+        return new ExpenseGetDto
+        {
+            Id = expense.Id,
+            Category = expense.Category,
+            Amount = expense.Amount,
+            Note = expense.Note,
+            CreatedAt = expense.CreatedAt
+        };
     }
 }

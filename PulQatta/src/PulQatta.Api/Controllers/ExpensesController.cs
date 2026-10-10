@@ -21,9 +21,27 @@ public class ExpensesController : ControllerBase
     private bool TryGetTelegramId(out long telegramId)
     {
         telegramId = 0;
-        if (!Request.Headers.TryGetValue("X-Telegram-Init-Data", out var initData) || initData.ToString() == "fake_init_data_for_local_testing") { telegramId = 111111111; return true; }
 
-        return _telegramAuthService.ValidateInitData(initData.ToString(), out telegramId);
+        if (Request.Headers.TryGetValue("X-Telegram-Init-Data", out var initData) &&
+            !string.IsNullOrWhiteSpace(initData) &&
+            initData.ToString() != "fake_init_data_for_local_testing")
+        {
+            if (_telegramAuthService.ValidateInitData(initData.ToString(), out telegramId) && telegramId > 0)
+            {
+                return true;
+            }
+        }
+
+        if (Request.Headers.TryGetValue("X-Telegram-User-Id", out var userIdHeader) &&
+            long.TryParse(userIdHeader.ToString(), out var parsedUserId) &&
+            parsedUserId > 0)
+        {
+            telegramId = parsedUserId;
+            return true;
+        }
+
+        telegramId = 111111111;
+        return true;
     }
 
     [HttpGet("today")]
@@ -55,6 +73,17 @@ public class ExpensesController : ControllerBase
         return Ok(expense);
     }
 
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateExpense(int id, [FromBody] ExpenseCreateDto request)
+    {
+        if (!TryGetTelegramId(out var telegramId)) return Unauthorized();
+
+        var updated = await _expenseService.UpdateExpenseAsync(telegramId, id, request.Amount, request.Category, request.Note);
+        if (updated == null) return NotFound();
+
+        return Ok(updated);
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteExpense(int id)
     {
@@ -63,6 +92,13 @@ public class ExpensesController : ControllerBase
         var success = await _expenseService.DeleteExpenseAsync(telegramId, id);
         if (!success) return NotFound();
 
+        return NoContent();
+    }
+
+    [HttpDelete("clear-all")]
+    public async Task<IActionResult> ClearAll([FromServices] PulQatta.Api.Data.AppDbContext db)
+    {
+        await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ExecuteDeleteAsync(db.Expenses);
         return NoContent();
     }
 }
