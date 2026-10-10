@@ -387,8 +387,24 @@ export default function Home() {
       }
     };
 
+    const resetWindowHorizontalScroll = () => {
+      if (window.scrollX !== 0) {
+        window.scrollTo(0, window.scrollY);
+      }
+      if (document.documentElement.scrollLeft !== 0) {
+        document.documentElement.scrollLeft = 0;
+      }
+      if (document.body.scrollLeft !== 0) {
+        document.body.scrollLeft = 0;
+      }
+    };
+
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    window.addEventListener('scroll', resetWindowHorizontalScroll, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      window.removeEventListener('scroll', resetWindowHorizontalScroll);
+    };
   }, []);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -431,7 +447,7 @@ export default function Home() {
     setDraft(formatMoney(expense.amount));
     setSelectedCategory(getCategoryKey(expense.category));
     setNote(expense.note || '');
-    amountInputRef.current?.focus();
+    amountInputRef.current?.focus({ preventScroll: true });
   };
 
   const handleCancelEdit = () => {
@@ -550,14 +566,20 @@ export default function Home() {
     }
   };
 
+  const lockHorizontalScroll = (e: React.UIEvent<HTMLElement>) => {
+    if (e.currentTarget.scrollLeft !== 0) {
+      e.currentTarget.scrollLeft = 0;
+    }
+  };
+
   const monthTotal = monthSummary.reduce((sum, item) => sum + item.totalAmount, 0);
   const displayedTotal = activeView === 'today' ? todayTotal : monthTotal;
   const displayedUsd = (displayedTotal / USD_RATE).toFixed(2);
 
   return (
-    <div className="miniapp-root">
-      <div className="miniapp-shell">
-        <main className="app-screen">
+    <div className="miniapp-root" onScroll={lockHorizontalScroll}>
+      <div className="miniapp-shell" onScroll={lockHorizontalScroll}>
+        <main className="app-screen" onScroll={lockHorizontalScroll}>
           <header className="miniapp-header">
             <div className="brand-wrap">
               <img src="/logo.png?v=2" alt="PulQatta?" className="brand-logo" />
@@ -666,12 +688,13 @@ export default function Home() {
                       setSelectedCategory(cat.key);
                       const strip = stripRef.current;
                       if (strip) {
+                        const maxScroll = Math.max(0, strip.scrollWidth - strip.clientWidth);
                         const targetLeft =
                           e.currentTarget.offsetLeft -
                           strip.clientWidth / 2 +
                           e.currentTarget.clientWidth / 2;
                         strip.scrollTo({
-                          left: Math.max(0, targetLeft),
+                          left: Math.min(maxScroll, Math.max(0, targetLeft)),
                           behavior: 'smooth',
                         });
                       }
