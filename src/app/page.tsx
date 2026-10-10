@@ -664,11 +664,17 @@ export default function Home() {
                     onClick={(e) => {
                       if (didMoveRef.current) return;
                       setSelectedCategory(cat.key);
-                      e.currentTarget.scrollIntoView({
-                        behavior: 'smooth',
-                        inline: 'center',
-                        block: 'nearest',
-                      });
+                      const strip = stripRef.current;
+                      if (strip) {
+                        const targetLeft =
+                          e.currentTarget.offsetLeft -
+                          strip.clientWidth / 2 +
+                          e.currentTarget.clientWidth / 2;
+                        strip.scrollTo({
+                          left: Math.max(0, targetLeft),
+                          behavior: 'smooth',
+                        });
+                      }
                     }}
                     className={`category-chip ${selectedCategory === cat.key ? 'active' : ''}`}
                   >

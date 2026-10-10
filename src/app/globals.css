@@ -17,11 +17,15 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
+  width: 100%;
 }
 
 body {
   margin: 0;
+  width: 100%;
   min-height: 100vh;
+  overflow-x: clip;
   display: flex;
   justify-content: center;
   background:
@@ -55,7 +59,9 @@ input {
 
 .miniapp-root {
   width: 100%;
+  max-width: 100vw;
   min-height: 100vh;
+  overflow-x: clip;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -65,7 +71,9 @@ input {
 .miniapp-shell {
   position: relative;
   overflow: hidden;
+  overflow-x: clip;
   width: min(100%, 420px);
+  max-width: 100%;
   min-height: calc(100vh - 24px);
   background: rgba(255, 255, 255, 0.52);
   backdrop-filter: blur(20px);
@@ -98,6 +106,9 @@ input {
 .app-screen {
   position: relative;
   z-index: 1;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -420,7 +431,7 @@ input {
   width: 100%;
   background: transparent;
   color: var(--ink);
-  font-size: 0.83rem;
+  font-size: 1rem;
   padding: 10px 0;
 }
 
