@@ -28,7 +28,7 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        var frontendOrigin = builder.Configuration["FRONTEND_ORIGIN"] ?? "https://pulqatta.netlify.app";
+        var frontendOrigin = builder.Configuration["FRONTEND_ORIGIN"] ?? "http://localhost:3000";
         policy.WithOrigins(frontendOrigin)
               .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
               .WithHeaders("Content-Type", "X-Telegram-Init-Data");
