@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useTransition } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowRight,
@@ -12,37 +12,28 @@ import {
   Calendar,
   RotateCcw,
   RefreshCw,
+  Wallet,
+  PieChart,
 } from 'lucide-react';
 
 const USD_RATE = 12800;
-
 const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015';
 
-const CHART_COLORS = [
-  '#18181b',
-  '#3f3f46',
-  '#71717a',
-  '#a16207',
-  '#d97706',
-  '#0f766e',
-  '#4338ca',
-  '#be123c',
-  '#7c3aed',
-  '#a8a29e',
-];
-
-const CATEGORIES = [
-  { key: 'Food', label: 'Еда' },
-  { key: 'Cafe', label: 'Кафе' },
-  { key: 'Transport', label: 'Транспорт' },
-  { key: 'Utilities', label: 'Коммуналка' },
-  { key: 'Clothes', label: 'Одежда' },
-  { key: 'Electronics', label: 'Техника' },
-  { key: 'Health', label: 'Здоровье' },
-  { key: 'Games', label: 'Игры' },
-  { key: 'Subscriptions', label: 'Подписки' },
-  { key: 'Other', label: 'Прочее' },
+export const CATEGORIES = [
+  { key: 'Food', label: 'Еда', icon: '🍔', color: '#f59e0b' },
+  { key: 'Transport', label: 'Транспорт', icon: '🚕', color: '#3b82f6' },
+  { key: 'Credit', label: 'Кредит', icon: '💳', color: '#1c1917' },
+  { key: 'Investment', label: 'Инвестиции', icon: '📈', color: '#10b981' },
+  { key: 'Utilities', label: 'Коммуналка', icon: '💡', color: '#8b5cf6' },
+  { key: 'Clothes', label: 'Одежда', icon: '👕', color: '#ec4899' },
+  { key: 'Electronics', label: 'Техника', icon: '💻', color: '#06b6d4' },
+  { key: 'Health', label: 'Здоровье', icon: '💊', color: '#ef4444' },
+  { key: 'Games', label: 'Игры', icon: '🎮', color: '#84cc16' },
+  { key: 'Subscriptions', label: 'Подписки', icon: '🔄', color: '#6366f1' },
+  { key: 'Other', label: 'Прочее', icon: '📦', color: '#a8a29e' },
 ] as const;
+
+export type CategoryKey = (typeof CATEGORIES)[number]['key'];
 
 export type Expense = {
   id: number;
@@ -67,32 +58,30 @@ function parseMoney(val: string): number {
   return parseInt(val.replace(/[.\s,]/g, ''), 10) || 0;
 }
 
-function getCategoryLabel(raw?: string | number): string {
-  if (raw === undefined || raw === null) return 'Прочее';
-  if (typeof raw === 'number' || !Number.isNaN(Number(raw))) {
-    const idx = Number(raw);
-    return CATEGORIES[idx]?.label || 'Прочее';
-  }
-  const found = CATEGORIES.find(
-    (c) =>
-      c.key.toLowerCase() === String(raw).toLowerCase() ||
-      c.label.toLowerCase() === String(raw).toLowerCase()
-  );
-  return found ? found.label : String(raw);
-}
-
 function getCategoryKey(raw?: string | number): string {
   if (raw === undefined || raw === null) return 'Other';
+  const str = String(raw).toLowerCase();
+  if (str === 'cafe' || str === 'кафе') return 'Food';
   if (typeof raw === 'number' || !Number.isNaN(Number(raw))) {
     const idx = Number(raw);
+    if (idx === 8) return 'Food'; // legacy Cafe enum index
     return CATEGORIES[idx]?.key || 'Other';
   }
   const found = CATEGORIES.find(
     (c) =>
-      c.key.toLowerCase() === String(raw).toLowerCase() ||
-      c.label.toLowerCase() === String(raw).toLowerCase()
+      c.key.toLowerCase() === str ||
+      c.label.toLowerCase() === str
   );
   return found ? found.key : 'Other';
+}
+
+function getCategoryObj(raw?: string | number) {
+  const key = getCategoryKey(raw);
+  return CATEGORIES.find((c) => c.key === key) || CATEGORIES[CATEGORIES.length - 1];
+}
+
+function getCategoryLabel(raw?: string | number): string {
+  return getCategoryObj(raw).label;
 }
 
 function getLocalDateString(d: Date): string {
@@ -180,7 +169,7 @@ function saveLocalExpenses(userId: string, list: Expense[]) {
   }
 }
 
-// Butter-smooth, zero-lag swipeable row with hardware accelerated transform
+// Swipeable transaction row with hardware-accelerated gesture
 function SwipeableExpenseRow({
   expense,
   isBeingEdited,
@@ -198,7 +187,7 @@ function SwipeableExpenseRow({
   const isDraggingRef = useRef(false);
   const [activeMode, setActiveMode] = useState<'none' | 'edit' | 'delete'>('none');
 
-  const catLabel = getCategoryLabel(expense.category);
+  const catObj = getCategoryObj(expense.category);
   const hasNote = Boolean(expense.note && expense.note.trim());
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -217,7 +206,6 @@ function SwipeableExpenseRow({
     if (!isDraggingRef.current || startXRef.current === null || !rowRef.current) return;
     const delta = e.clientX - startXRef.current;
 
-    // Apply damping curve directly without triggering React re-renders
     let clamped = delta;
     if (clamped > 80) clamped = 80 + (clamped - 80) * 0.2;
     if (clamped < -80) clamped = -80 + (clamped + 80) * 0.2;
@@ -244,7 +232,6 @@ function SwipeableExpenseRow({
     rowRef.current.style.transform = 'translate3d(0, 0, 0)';
     setActiveMode('none');
 
-    // Threshold trigger
     if (finalX <= -65) {
       onDelete(expense);
     } else if (finalX >= 65) {
@@ -280,10 +267,12 @@ function SwipeableExpenseRow({
         onPointerCancel={handlePointerUp}
       >
         <div className="history-main">
-          <span className="history-badge">{catLabel.charAt(0)}</span>
+          <span className="history-badge" style={{ backgroundColor: `${catObj.color}22`, color: catObj.color }}>
+            {catObj.icon}
+          </span>
           <div className="history-text">
-            <span className="history-name">{hasNote ? expense.note : catLabel}</span>
-            {hasNote && <span className="history-sub">{catLabel}</span>}
+            <span className="history-name">{hasNote ? expense.note : catObj.label}</span>
+            {hasNote && <span className="history-sub">{catObj.label}</span>}
           </div>
         </div>
         <div className="history-right">
@@ -297,14 +286,128 @@ function SwipeableExpenseRow({
   );
 }
 
+// Interactive SVG Donut Chart with center percent and category info
+function DonutChart({
+  items,
+  selectedKey,
+  onSelectKey,
+}: {
+  items: {
+    key: string;
+    label: string;
+    icon: string;
+    color: string;
+    amount: number;
+    pct: number;
+  }[];
+  selectedKey: string | null;
+  onSelectKey: (key: string) => void;
+}) {
+  const total = items.reduce((acc, it) => acc + it.amount, 0);
+  const size = 220;
+  const strokeWidth = 32;
+  const radius = 76;
+  const center = size / 2;
+  const circumference = 2 * Math.PI * radius; // ~477.52
+
+  const activeItem =
+    items.find((it) => it.key === selectedKey) ||
+    items[0] || {
+      key: 'Food',
+      label: 'Еда',
+      icon: '🍔',
+      color: '#f59e0b',
+      amount: 0,
+      pct: 0,
+    };
+
+  let accumulatedLength = 0;
+
+  return (
+    <div className="donut-chart-box">
+      <svg
+        viewBox={`0 0 ${size} ${size}`}
+        className="donut-svg"
+        shapeRendering="geometricPrecision"
+      >
+        {total === 0 ? (
+          <circle
+            cx={center}
+            cy={center}
+            r={radius}
+            fill="transparent"
+            stroke="rgba(24, 24, 27, 0.08)"
+            strokeWidth={strokeWidth}
+          />
+        ) : (
+          items.map((item) => {
+            const fraction = item.amount / total;
+            const sliceLength = fraction * circumference;
+            const gap = items.length > 1 ? 3 : 0;
+            const dash = Math.max(1, sliceLength - gap);
+            const dashArray = `${dash} ${circumference - dash}`;
+            const dashOffset = -accumulatedLength;
+            accumulatedLength += sliceLength;
+
+            const isSelected = selectedKey === item.key;
+
+            return (
+              <circle
+                key={item.key}
+                cx={center}
+                cy={center}
+                r={radius}
+                fill="transparent"
+                stroke={item.color}
+                strokeWidth={isSelected ? strokeWidth + 6 : strokeWidth}
+                strokeDasharray={dashArray}
+                strokeDashoffset={dashOffset}
+                transform={`rotate(-90 ${center} ${center})`}
+                className={`donut-slice ${isSelected ? 'active' : ''}`}
+                style={{
+                  cursor: 'pointer',
+                  transition: 'stroke-width 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease',
+                  opacity: selectedKey && !isSelected ? 0.45 : 1,
+                }}
+                onClick={() => onSelectKey(item.key)}
+              />
+            );
+          })
+        )}
+      </svg>
+
+      {/* Center hole overlay displaying percentage and category */}
+      <div className="donut-center-info">
+        <motion.div
+          key={activeItem.key + (activeItem.pct || 0)}
+          initial={{ opacity: 0, scale: 0.88 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.18 }}
+          className="donut-center-content"
+        >
+          <span className="donut-center-pct numbers" style={{ color: activeItem.color }}>
+            {activeItem.pct}%
+          </span>
+          <span className="donut-center-label">
+            {activeItem.label}
+          </span>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
-  const [activeView, setActiveView] = useState<'day' | 'month'>('day');
+  const [activePage, setActivePage] = useState<'home' | 'stats'>('home');
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [todayDate, setTodayDate] = useState<string>('');
   const [dayTotal, setDayTotal] = useState(0);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [monthSummary, setMonthSummary] = useState<CategorySummary[]>([]);
-  const [allMonthExpenses, setAllMonthExpenses] = useState<Expense[]>([]);
+  const [, setAllMonthExpenses] = useState<Expense[]>([]);
+
+  // Statistics active category filter
+  const [selectedStatKey, setSelectedStatKey] = useState<string | null>(null);
 
   // Draft inputs
   const [draft, setDraft] = useState('');
@@ -320,8 +423,6 @@ export default function Home() {
   // Undo deletion notification
   const [undoItem, setUndoItem] = useState<Expense | null>(null);
   const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const [, startTransition] = useTransition();
 
   const identityRef = useRef<{ initData: string; userId: string; username: string }>({
     initData: '',
@@ -362,7 +463,7 @@ export default function Home() {
     };
   }, []);
 
-  // Compute local metrics for offline mode
+  // Compute local metrics for offline fallback
   const applyLocalData = useCallback(
     (targetDate: string) => {
       const { userId } = identityRef.current;
@@ -373,7 +474,7 @@ export default function Home() {
         return itemDate === targetDate;
       });
 
-      const targetMonthPrefix = targetDate.slice(0, 7);
+      const targetMonthPrefix = targetDate ? targetDate.slice(0, 7) : '';
       const monthItems = all.filter((e) => {
         const itemDate = e.createdAt ? e.createdAt.slice(0, 10) : '';
         return itemDate.startsWith(targetMonthPrefix);
@@ -431,7 +532,7 @@ export default function Home() {
           return;
         }
       } catch {
-        // Backend unreachable -> local fallback
+        // Fallback
       }
 
       applyLocalData(targetDate);
@@ -457,7 +558,7 @@ export default function Home() {
   };
 
   const handleJumpToday = () => {
-    setSelectedDate(getLocalDateString(new Date()));
+    setSelectedDate(todayDate || getLocalDateString(new Date()));
   };
 
   const handleStartEdit = (item: Expense) => {
@@ -467,7 +568,6 @@ export default function Home() {
     setNote(item.note || '');
     amountInputRef.current?.focus({ preventScroll: true });
 
-    // Haptic feedback
     // @ts-ignore
     window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
   };
@@ -487,7 +587,6 @@ export default function Home() {
     const isEditing = editingId !== null;
     const trimmedNote = note.trim() || null;
 
-    // Use current time if today, or selectedDate noon if past/future day
     const isToday = todayDate ? selectedDate === todayDate : false;
     const createdTimestamp = isToday
       ? new Date().toISOString()
@@ -565,12 +664,11 @@ export default function Home() {
     const updatedLocal = getLocalExpenses(userId).filter((item) => item.id !== target.id);
     saveLocalExpenses(userId, updatedLocal);
 
-    // Show undo snackbar
+    // Show undo notification
     setUndoItem(target);
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     undoTimerRef.current = setTimeout(() => {
       setUndoItem(null);
-      // Finalize backend delete after undo window expires
       fetch(`${apiUrl}/api/expenses/${target.id}`, {
         method: 'DELETE',
         headers: getHeaders(),
@@ -588,11 +686,9 @@ export default function Home() {
     const item = undoItem;
     setUndoItem(null);
 
-    // Re-add to UI
     setExpenses((prev) => [item, ...prev]);
     setDayTotal((prev) => prev + item.amount);
 
-    // Re-add to local storage
     const { userId } = identityRef.current;
     const current = getLocalExpenses(userId);
     saveLocalExpenses(userId, [item, ...current]);
@@ -601,9 +697,34 @@ export default function Home() {
     window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
   };
 
-  const monthTotal = monthSummary.reduce((sum, item) => sum + item.totalAmount, 0);
-  const displayedTotal = activeView === 'day' ? dayTotal : monthTotal;
-  const displayedUsd = (displayedTotal / USD_RATE).toFixed(2);
+  // Month Statistics Calculations
+  const monthTotal = monthSummary.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+  const monthUsd = (monthTotal / USD_RATE).toFixed(2);
+
+  // Group summary by unified categories (Cafe -> Food, etc.)
+  const formattedStatItems = (() => {
+    const map = new Map<string, number>();
+    for (const item of monthSummary) {
+      const key = getCategoryKey(item.category);
+      map.set(key, (map.get(key) || 0) + Number(item.totalAmount || 0));
+    }
+    return Array.from(map.entries())
+      .map(([key, amount]) => {
+        const cat = getCategoryObj(key);
+        const pct = monthTotal > 0 ? Math.round((amount / monthTotal) * 100) : 0;
+        return {
+          key,
+          label: cat.label,
+          icon: cat.icon,
+          color: cat.color,
+          amount,
+          pct,
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+  })();
+
+  const dayUsd = (dayTotal / USD_RATE).toFixed(2);
   const isToday = !selectedDate || selectedDate === todayDate;
 
   return (
@@ -623,286 +744,303 @@ export default function Home() {
                 onClick={() => loadData(selectedDate)}
                 aria-label="Обновить данные"
               >
-                <RefreshCw size={13} />
+                <RefreshCw size={14} />
               </button>
-
-              <div className="status-tabs" role="tablist">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeView === 'day'}
-                  className={`status-tag ${activeView === 'day' ? 'active' : ''}`}
-                  onClick={() => setActiveView('day')}
-                >
-                  День
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeView === 'month'}
-                  className={`status-tag ${activeView === 'month' ? 'active' : ''}`}
-                  onClick={() => setActiveView('month')}
-                >
-                  Месяц
-                </button>
-              </div>
             </div>
           </header>
 
-          {/* Compact Balance Card */}
-          <motion.section
-            className="summary-card"
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <div className="summary-top">
-              <div className="summary-label">
-                {activeView === 'day'
-                  ? isToday
-                    ? 'Итого за сегодня'
-                    : `Итого за ${formatDateDisplay(selectedDate, todayDate)}`
-                  : 'Всего за этот месяц'}
-              </div>
-              <div className="summary-usd numbers">≈ ${displayedUsd}</div>
-            </div>
-            <div className="summary-row">
-              <span className="total-number numbers">{formatMoney(displayedTotal || 0)}</span>
-              <span className="currency">UZS</span>
-            </div>
-          </motion.section>
-
-          {/* Day Navigation Bar (when in Day view) */}
-          {activeView === 'day' && (
-            <div className="day-picker-bar">
-              <button
-                type="button"
-                className="day-arrow-btn"
-                onClick={() => handleShiftDay('prev')}
-                aria-label="Предыдущий день"
+          {/* PAGE VIEW SWITCHER WITH SMOOTH SPRING TRANSITION */}
+          <AnimatePresence mode="wait">
+            {activePage === 'home' ? (
+              <motion.div
+                key="home-page"
+                initial={{ opacity: 0, x: -12 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -12 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="page-tab-content"
               >
-                <ChevronLeft size={16} />
-              </button>
-
-              <div
-                className="day-center-wrap"
-                onClick={() => dateInputRef.current?.showPicker?.()}
-              >
-                <Calendar size={13} className="cal-icon" />
-                <span className="day-label-text">{formatDateDisplay(selectedDate, todayDate)}</span>
-                <input
-                  ref={dateInputRef}
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => {
-                    if (e.target.value) setSelectedDate(e.target.value);
-                  }}
-                  className="hidden-date-input"
-                />
-              </div>
-
-              {!isToday && (
-                <button type="button" className="today-jump-btn" onClick={handleJumpToday}>
-                  Сегодня
-                </button>
-              )}
-
-              <button
-                type="button"
-                className="day-arrow-btn"
-                onClick={() => handleShiftDay('next')}
-                aria-label="Следующий день"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          )}
-
-          {/* Compact Input Card */}
-          <section className="input-card">
-            <div className="input-card-head">
-              <div className="field-label-wrap">
-                <span className="field-label">
-                  {editingId !== null ? 'Редактировать расход' : 'Новая трата'}
-                </span>
-                {editingId !== null && (
-                  <button type="button" className="cancel-edit-btn" onClick={handleCancelEdit}>
-                    Отмена
-                  </button>
-                )}
-              </div>
-              <span className="quick-date-hint">
-                {isToday ? 'Сегодня' : selectedDate.slice(5).replace('-', '.')}
-              </span>
-            </div>
-
-            <div className="category-strip-wrap">
-              <div ref={stripRef} className="category-strip" role="radiogroup">
-                {CATEGORIES.map((cat) => (
-                  <button
-                    key={cat.key}
-                    type="button"
-                    onClick={() => setSelectedCategory(cat.key)}
-                    className={`category-chip ${selectedCategory === cat.key ? 'active' : ''}`}
-                  >
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="input-box-group">
-              <div className="input-shell">
-                <input
-                  ref={amountInputRef}
-                  id="amount-input"
-                  type="text"
-                  inputMode="numeric"
-                  value={draft}
-                  onChange={(e) => {
-                    const parsed = parseMoney(e.target.value);
-                    setDraft(parsed ? formatMoney(parsed) : '');
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleQuickAdd();
-                    } else if (e.key === 'Escape' && editingId !== null) {
-                      handleCancelEdit();
-                    }
-                  }}
-                  placeholder="Сумма в сумах"
-                  className="quick-input numbers"
-                />
-                <button
-                  type="button"
-                  className="add-trigger"
-                  onClick={handleQuickAdd}
-                  disabled={!parseMoney(draft) || isSubmitting}
-                  aria-label={editingId !== null ? 'Сохранить' : 'Добавить'}
-                >
-                  {editingId !== null ? <Check size={16} /> : <ArrowRight size={16} />}
-                </button>
-              </div>
-
-              <div className="note-row">
-                <input
-                  type="text"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleQuickAdd();
-                    }
-                  }}
-                  placeholder="Комментарий к расходу..."
-                  className="note-input"
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* History / Monthly Analytics Section */}
-          <section className="history-box">
-            <div className="history-header">
-              <div className="history-title">
-                {activeView === 'day'
-                  ? isToday
-                    ? 'Траты за сегодня'
-                    : `Траты (${formatDateDisplay(selectedDate, todayDate)})`
-                  : 'Структура расходов за месяц'}
-              </div>
-              {activeView === 'day' && expenses.length > 0 && (
-                <span className="swipe-hint">← свайп для действий →</span>
-              )}
-            </div>
-
-            {/* Monthly View Bars */}
-            {activeView === 'month' && monthSummary.length > 0 && monthTotal > 0 && (
-              <div className="chart-bar-wrap">
-                {monthSummary.map((item, idx) => {
-                  const pct = Math.max(3, Math.round((item.totalAmount / monthTotal) * 100));
-                  return (
-                    <div
-                      key={String(item.category) + idx}
-                      className="chart-bar-seg"
-                      style={{
-                        width: `${pct}%`,
-                        backgroundColor: CHART_COLORS[idx % CHART_COLORS.length],
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Content List */}
-            <div className="history-list">
-              {activeView === 'day' ? (
-                expenses.length > 0 ? (
-                  <AnimatePresence initial={false}>
-                    {expenses.map((expense) => (
-                      <SwipeableExpenseRow
-                        key={expense.id}
-                        expense={expense}
-                        isBeingEdited={editingId === expense.id}
-                        onEdit={handleStartEdit}
-                        onDelete={handleDeleteExpense}
-                      />
-                    ))}
-                  </AnimatePresence>
-                ) : (
-                  <div className="empty-state">
-                    <span className="empty-icon">☕</span>
-                    <span>Нет трат за этот день</span>
+                {/* Day Summary Balance Card */}
+                <section className="summary-card">
+                  <div className="summary-top">
+                    <div className="summary-label">
+                      {isToday
+                        ? 'Итого за сегодня'
+                        : `Итого за ${formatDateDisplay(selectedDate, todayDate)}`}
+                    </div>
+                    <div className="summary-usd numbers">≈ ${dayUsd}</div>
                   </div>
-                )
-              ) : monthSummary.length > 0 ? (
-                <div className="month-cards-list">
-                  {monthSummary.map((item, idx) => {
-                    const catLabel = getCategoryLabel(item.category);
-                    const pct = monthTotal > 0 ? Math.round((item.totalAmount / monthTotal) * 100) : 0;
-                    const barColor = CHART_COLORS[idx % CHART_COLORS.length];
-                    return (
-                      <div key={String(item.category) + idx} className="month-item-col">
-                        <div className="month-item-top">
-                          <div className="history-main">
-                            <span className="history-badge" style={{ backgroundColor: barColor }}>
-                              {catLabel.charAt(0)}
-                            </span>
-                            <div className="history-text">
-                              <span className="history-name">{catLabel}</span>
-                              <span className="history-sub">{pct}% от общих трат</span>
-                            </div>
-                          </div>
-                          <div className="history-right">
-                            <div className="history-amount-pill">
-                              <span className="history-amount numbers">
-                                {formatMoney(item.totalAmount)}
-                              </span>
-                              <span className="history-currency">UZS</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="month-progress-track">
-                          <div
-                            className="month-progress-fill"
-                            style={{ width: `${pct}%`, backgroundColor: barColor }}
+                  <div className="summary-row">
+                    <span className="total-number numbers">{formatMoney(dayTotal || 0)}</span>
+                    <span className="currency">UZS</span>
+                  </div>
+                </section>
+
+                {/* Day Navigation Bar */}
+                <div className="day-picker-bar">
+                  <button
+                    type="button"
+                    className="day-arrow-btn"
+                    onClick={() => handleShiftDay('prev')}
+                    aria-label="Предыдущий день"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  <div
+                    className="day-center-wrap"
+                    onClick={() => dateInputRef.current?.showPicker?.()}
+                  >
+                    <Calendar size={13} className="cal-icon" />
+                    <span className="day-label-text">{formatDateDisplay(selectedDate, todayDate)}</span>
+                    <input
+                      ref={dateInputRef}
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => {
+                        if (e.target.value) setSelectedDate(e.target.value);
+                      }}
+                      className="hidden-date-input"
+                    />
+                  </div>
+
+                  {!isToday && (
+                    <button type="button" className="today-jump-btn" onClick={handleJumpToday}>
+                      Сегодня
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    className="day-arrow-btn"
+                    onClick={() => handleShiftDay('next')}
+                    aria-label="Следующий день"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+
+                {/* Quick Expense Input Card */}
+                <section className="input-card">
+                  <div className="input-card-head">
+                    <div className="field-label-wrap">
+                      <span className="field-label">
+                        {editingId !== null ? 'Редактировать расход' : 'Новая трата'}
+                      </span>
+                      {editingId !== null && (
+                        <button type="button" className="cancel-edit-btn" onClick={handleCancelEdit}>
+                          Отмена
+                        </button>
+                      )}
+                    </div>
+                    <span className="quick-date-hint">
+                      {isToday ? 'Сегодня' : selectedDate.slice(5).replace('-', '.')}
+                    </span>
+                  </div>
+
+                  {/* Horizontal Category Strip with Icons */}
+                  <div className="category-strip-wrap">
+                    <div ref={stripRef} className="category-strip" role="radiogroup">
+                      {CATEGORIES.map((cat) => (
+                        <button
+                          key={cat.key}
+                          type="button"
+                          onClick={() => setSelectedCategory(cat.key)}
+                          className={`category-chip ${selectedCategory === cat.key ? 'active' : ''}`}
+                        >
+                          <span className="chip-icon">{cat.icon}</span>
+                          <span className="chip-label">{cat.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="input-box-group">
+                    <div className="input-shell">
+                      <input
+                        ref={amountInputRef}
+                        id="amount-input"
+                        type="text"
+                        inputMode="numeric"
+                        value={draft}
+                        onChange={(e) => {
+                          const parsed = parseMoney(e.target.value);
+                          setDraft(parsed ? formatMoney(parsed) : '');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleQuickAdd();
+                          } else if (e.key === 'Escape' && editingId !== null) {
+                            handleCancelEdit();
+                          }
+                        }}
+                        placeholder="Сумма в сумах"
+                        className="quick-input numbers"
+                      />
+                      <button
+                        type="button"
+                        className="add-trigger"
+                        onClick={handleQuickAdd}
+                        disabled={!parseMoney(draft) || isSubmitting}
+                        aria-label={editingId !== null ? 'Сохранить' : 'Добавить'}
+                      >
+                        {editingId !== null ? <Check size={16} /> : <ArrowRight size={16} />}
+                      </button>
+                    </div>
+
+                    <div className="note-row">
+                      <input
+                        type="text"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleQuickAdd();
+                          }
+                        }}
+                        placeholder="Комментарий к расходу..."
+                        className="note-input"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                {/* Day Expenses History */}
+                <section className="history-box">
+                  <div className="history-header">
+                    <div className="history-title">
+                      {isToday
+                        ? 'Траты за сегодня'
+                        : `Траты (${formatDateDisplay(selectedDate, todayDate)})`}
+                    </div>
+                    {expenses.length > 0 && (
+                      <span className="swipe-hint">← свайп для действий →</span>
+                    )}
+                  </div>
+
+                  <div className="history-list">
+                    {expenses.length > 0 ? (
+                      <AnimatePresence initial={false}>
+                        {expenses.map((expense) => (
+                          <SwipeableExpenseRow
+                            key={expense.id}
+                            expense={expense}
+                            isBeingEdited={editingId === expense.id}
+                            onEdit={handleStartEdit}
+                            onDelete={handleDeleteExpense}
                           />
-                        </div>
+                        ))}
+                      </AnimatePresence>
+                    ) : (
+                      <div className="empty-state">
+                        <span className="empty-icon">☕</span>
+                        <span>Нет трат за этот день</span>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <span className="empty-icon">📊</span>
-                  <span>В этом месяце трат пока нет</span>
-                </div>
-              )}
-            </div>
-          </section>
+                    )}
+                  </div>
+                </section>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="stats-page"
+                initial={{ opacity: 0, x: 12 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 12 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="page-tab-content stats-page-wrap"
+              >
+                {/* Statistics Hero matching image */}
+                <section className="stats-hero-card">
+                  <span className="stats-hero-label">Всего за этот месяц</span>
+                  <div className="stats-hero-total numbers">
+                    {formatMoney(monthTotal)} UZS
+                  </div>
+                  <div className="stats-hero-usd numbers">
+                    ≈ ${monthUsd}
+                  </div>
+                </section>
+
+                {/* Donut Chart with center percent & label */}
+                <DonutChart
+                  items={formattedStatItems}
+                  selectedKey={selectedStatKey}
+                  onSelectKey={(key) => {
+                    setSelectedStatKey((prev) => (prev === key ? null : key));
+                    // @ts-ignore
+                    window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+                  }}
+                />
+
+                {/* Category Breakdown List */}
+                <section className="stats-breakdown-card">
+                  <div className="stats-breakdown-head">
+                    <span className="stats-breakdown-title">Категории расходов</span>
+                    <span className="stats-breakdown-count numbers">
+                      {formattedStatItems.length}
+                    </span>
+                  </div>
+
+                  <div className="stats-items-list">
+                    {formattedStatItems.length > 0 ? (
+                      formattedStatItems.map((item) => {
+                        const isSelected = selectedStatKey === item.key;
+                        return (
+                          <div
+                            key={item.key}
+                            className={`stat-item-row ${isSelected ? 'active' : ''}`}
+                            onClick={() => {
+                              setSelectedStatKey((prev) => (prev === item.key ? null : item.key));
+                              // @ts-ignore
+                              window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+                            }}
+                          >
+                            <div className="stat-item-main">
+                              <div className="stat-item-left">
+                                <span
+                                  className="stat-item-badge"
+                                  style={{ backgroundColor: `${item.color}1c` }}
+                                >
+                                  {item.icon}
+                                </span>
+                                <div className="stat-item-info">
+                                  <span className="stat-item-name">{item.label}</span>
+                                  <span className="stat-item-pct-pill">{item.pct}% от всех трат</span>
+                                </div>
+                              </div>
+                              <div className="stat-item-right">
+                                <span className="stat-item-amount numbers">
+                                  {formatMoney(item.amount)} UZS
+                                </span>
+                                <span className="stat-item-usd numbers">
+                                  ≈ ${(item.amount / USD_RATE).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="stat-progress-track">
+                              <div
+                                className="stat-progress-fill"
+                                style={{
+                                  width: `${Math.max(4, item.pct)}%`,
+                                  backgroundColor: item.color,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="empty-state">
+                        <span className="empty-icon">📊</span>
+                        <span>В этом месяце трат пока нет</span>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </main>
 
         {/* Undo Toast Notification */}
@@ -924,6 +1062,51 @@ export default function Home() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Modern Mobile Bottom Navigation Dock */}
+        <nav className="bottom-nav-dock">
+          <div className="bottom-nav-inner">
+            <button
+              type="button"
+              className={`nav-tab-btn ${activePage === 'home' ? 'active' : ''}`}
+              onClick={() => {
+                setActivePage('home');
+                // @ts-ignore
+                window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+              }}
+            >
+              <Wallet size={16} />
+              <span>Главная</span>
+              {activePage === 'home' && (
+                <motion.div
+                  layoutId="activeNavIndicator"
+                  className="nav-tab-indicator"
+                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                />
+              )}
+            </button>
+
+            <button
+              type="button"
+              className={`nav-tab-btn ${activePage === 'stats' ? 'active' : ''}`}
+              onClick={() => {
+                setActivePage('stats');
+                // @ts-ignore
+                window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+              }}
+            >
+              <PieChart size={16} />
+              <span>Статистика</span>
+              {activePage === 'stats' && (
+                <motion.div
+                  layoutId="activeNavIndicator"
+                  className="nav-tab-indicator"
+                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                />
+              )}
+            </button>
+          </div>
+        </nav>
       </div>
     </div>
   );
