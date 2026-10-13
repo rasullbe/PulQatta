@@ -32,20 +32,9 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        var configuredOrigin = builder.Configuration["FRONTEND_ORIGIN"];
-        var origins = new List<string>
-        {
-            "https://sparkly-flan-a1ad41.netlify.app",
-            "http://localhost:3000"
-        };
-        if (!string.IsNullOrWhiteSpace(configuredOrigin) && !origins.Contains(configuredOrigin.TrimEnd('/')))
-        {
-            origins.Add(configuredOrigin.TrimEnd('/'));
-        }
-
-        policy.WithOrigins(origins.ToArray())
-              .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-              .WithHeaders("Content-Type", "X-Telegram-Init-Data", "X-Telegram-User-Id");
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 

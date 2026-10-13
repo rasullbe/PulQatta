@@ -42,6 +42,63 @@ public class ExpenseService : IExpenseService
         };
     }
 
+    public async Task<ExpenseGetDto> AddExpenseWithDateAsync(long telegramId, decimal amount, Category category, string? note, DateTime? createdAt)
+    {
+        var user = await _userService.GetOrCreateUserAsync(telegramId);
+
+        var expense = new Expense
+        {
+            UserId = user.Id,
+            Amount = amount,
+            Category = category,
+            Note = note,
+            CreatedAt = createdAt.HasValue ? DateTime.SpecifyKind(createdAt.Value, DateTimeKind.Utc) : DateTime.UtcNow
+        };
+
+        _context.Expenses.Add(expense);
+        await _context.SaveChangesAsync();
+
+        return new ExpenseGetDto
+        {
+            Id = expense.Id,
+            Category = expense.Category,
+            Amount = expense.Amount,
+            Note = expense.Note,
+            CreatedAt = expense.CreatedAt
+        };
+    }
+
+    public async Task<decimal> GetDateTotalAsync(long telegramId, DateTime date)
+    {
+        var start = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
+        var end = start.AddDays(1);
+        return await _context.Expenses
+            .Include(e => e.User)
+            .Where(e => e.User!.TelegramId == telegramId && e.CreatedAt >= start && e.CreatedAt < end)
+            .SumAsync(e => e.Amount);
+    }
+
+    public async Task<List<ExpenseGetDto>> GetExpensesByDateAsync(long telegramId, DateTime date)
+    {
+        var start = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
+        var end = start.AddDays(1);
+        return await _context.Expenses
+            .Include(e => e.User)
+            .Where(e => e.User!.TelegramId == telegramId && e.CreatedAt >= start && e.CreatedAt < end)
+            .OrderByDescending(e => e.CreatedAt)
+            .Take(100)
+            .Select(e => new ExpenseGetDto
+            {
+                Id = e.Id,
+                Category = e.Category,
+                Amount = e.Amount,
+                Note = e.Note,
+                CreatedAt = e.CreatedAt
+            })
+            .ToListAsync();
+    }
+
+
     public async Task<decimal> GetTodayTotalAsync(long telegramId)
     {
         var today = DateTime.UtcNow.Date;

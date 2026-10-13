@@ -55,6 +55,23 @@ public class ExpensesController : ControllerBase
         return Ok(new { Total = total, Expenses = expenses });
     }
 
+    [HttpGet("by-date")]
+    public async Task<IActionResult> GetExpensesByDate([FromQuery] string? date)
+    {
+        if (!TryGetTelegramId(out var telegramId)) return Unauthorized();
+
+        DateTime targetDate = DateTime.UtcNow.Date;
+        if (!string.IsNullOrWhiteSpace(date) && DateTime.TryParse(date, out var parsed))
+        {
+            targetDate = parsed.Date;
+        }
+
+        var total = await _expenseService.GetDateTotalAsync(telegramId, targetDate);
+        var expenses = await _expenseService.GetExpensesByDateAsync(telegramId, targetDate);
+
+        return Ok(new { Total = total, Expenses = expenses, Date = targetDate.ToString("yyyy-MM-dd") });
+    }
+
     [HttpGet("month")]
     public async Task<IActionResult> GetMonthSummary()
     {
@@ -69,9 +86,12 @@ public class ExpensesController : ControllerBase
     {
         if (!TryGetTelegramId(out var telegramId)) return Unauthorized();
 
-        var expense = await _expenseService.AddExpenseAsync(telegramId, request.Amount, request.Category, request.Note);
+        var expense = request.CreatedAt.HasValue
+            ? await _expenseService.AddExpenseWithDateAsync(telegramId, request.Amount, request.Category, request.Note, request.CreatedAt.Value)
+            : await _expenseService.AddExpenseAsync(telegramId, request.Amount, request.Category, request.Note);
         return Ok(expense);
     }
+
 
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateExpense(int id, [FromBody] ExpenseCreateDto request)
