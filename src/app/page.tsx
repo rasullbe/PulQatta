@@ -95,17 +95,15 @@ function getCategoryKey(raw?: string | number): string {
   return found ? found.key : 'Other';
 }
 
-function getLocalDateString(d: Date = new Date()): string {
+function getLocalDateString(d: Date): string {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
-function formatDateDisplay(dateStr: string): string {
-  const today = getLocalDateString(new Date());
-  const yesterday = getLocalDateString(new Date(Date.now() - 86400000));
-
+function formatDateDisplay(dateStr: string, todayStr?: string): string {
+  if (!dateStr) return '';
   const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
   const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
@@ -114,8 +112,7 @@ function formatDateDisplay(dateStr: string): string {
   const dayName = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][d.getDay()];
   const formatted = `${d.getDate()} ${months[d.getMonth()]}, ${dayName}`;
 
-  if (dateStr === today) return `Сегодня (${formatted})`;
-  if (dateStr === yesterday) return `Вчера (${formatted})`;
+  if (todayStr && dateStr === todayStr) return `Сегодня (${formatted})`;
   return formatted;
 }
 
@@ -302,7 +299,8 @@ function SwipeableExpenseRow({
 
 export default function Home() {
   const [activeView, setActiveView] = useState<'day' | 'month'>('day');
-  const [selectedDate, setSelectedDate] = useState<string>(() => getLocalDateString());
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [todayDate, setTodayDate] = useState<string>('');
   const [dayTotal, setDayTotal] = useState(0);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [monthSummary, setMonthSummary] = useState<CategorySummary[]>([]);
@@ -345,6 +343,10 @@ export default function Home() {
     }
     identityRef.current = resolveTelegramIdentity();
 
+    const today = getLocalDateString(new Date());
+    setTodayDate(today);
+    setSelectedDate(today);
+
     const savedApi = localStorage.getItem('pulqatta_custom_api');
     if (savedApi) {
       setApiUrl(savedApi);
@@ -367,13 +369,13 @@ export default function Home() {
       const all = getLocalExpenses(userId);
 
       const dayItems = all.filter((e) => {
-        const itemDate = e.createdAt ? e.createdAt.slice(0, 10) : getLocalDateString();
+        const itemDate = e.createdAt ? e.createdAt.slice(0, 10) : '';
         return itemDate === targetDate;
       });
 
       const targetMonthPrefix = targetDate.slice(0, 7);
       const monthItems = all.filter((e) => {
-        const itemDate = e.createdAt ? e.createdAt.slice(0, 10) : getLocalDateString();
+        const itemDate = e.createdAt ? e.createdAt.slice(0, 10) : '';
         return itemDate.startsWith(targetMonthPrefix);
       });
 
@@ -398,6 +400,7 @@ export default function Home() {
   // Load data from backend or fallback to local
   const loadData = useCallback(
     async (targetDate: string = selectedDate) => {
+      if (!targetDate) return;
       setIsRefreshing(true);
       const headers = getHeaders();
       const { userId } = identityRef.current;
@@ -438,7 +441,9 @@ export default function Home() {
   );
 
   useEffect(() => {
-    loadData(selectedDate);
+    if (selectedDate) {
+      loadData(selectedDate);
+    }
   }, [loadData, selectedDate]);
 
   // Date navigation handlers
@@ -483,7 +488,7 @@ export default function Home() {
     const trimmedNote = note.trim() || null;
 
     // Use current time if today, or selectedDate noon if past/future day
-    const isToday = selectedDate === getLocalDateString();
+    const isToday = todayDate ? selectedDate === todayDate : false;
     const createdTimestamp = isToday
       ? new Date().toISOString()
       : `${selectedDate}T12:00:00.000Z`;
@@ -599,7 +604,7 @@ export default function Home() {
   const monthTotal = monthSummary.reduce((sum, item) => sum + item.totalAmount, 0);
   const displayedTotal = activeView === 'day' ? dayTotal : monthTotal;
   const displayedUsd = (displayedTotal / USD_RATE).toFixed(2);
-  const isToday = selectedDate === getLocalDateString();
+  const isToday = !selectedDate || selectedDate === todayDate;
 
   return (
     <div className="miniapp-root">
@@ -656,7 +661,7 @@ export default function Home() {
                 {activeView === 'day'
                   ? isToday
                     ? 'Итого за сегодня'
-                    : `Итого за ${formatDateDisplay(selectedDate)}`
+                    : `Итого за ${formatDateDisplay(selectedDate, todayDate)}`
                   : 'Всего за этот месяц'}
               </div>
               <div className="summary-usd numbers">≈ ${displayedUsd}</div>
@@ -684,7 +689,7 @@ export default function Home() {
                 onClick={() => dateInputRef.current?.showPicker?.()}
               >
                 <Calendar size={13} className="cal-icon" />
-                <span className="day-label-text">{formatDateDisplay(selectedDate)}</span>
+                <span className="day-label-text">{formatDateDisplay(selectedDate, todayDate)}</span>
                 <input
                   ref={dateInputRef}
                   type="date"
@@ -805,7 +810,7 @@ export default function Home() {
                 {activeView === 'day'
                   ? isToday
                     ? 'Траты за сегодня'
-                    : `Траты (${formatDateDisplay(selectedDate)})`
+                    : `Траты (${formatDateDisplay(selectedDate, todayDate)})`
                   : 'Структура расходов за месяц'}
               </div>
               {activeView === 'day' && expenses.length > 0 && (
@@ -918,8 +923,6 @@ export default function Home() {
               </button>
             </motion.div>
           )}
-        </AnimatePresence>
-
         </AnimatePresence>
       </div>
     </div>
