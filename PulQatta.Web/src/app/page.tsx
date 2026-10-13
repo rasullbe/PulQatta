@@ -12,8 +12,6 @@ import {
   Calendar,
   RotateCcw,
   RefreshCw,
-  Server,
-  X,
 } from 'lucide-react';
 
 const USD_RATE = 12800;
@@ -318,11 +316,8 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Connection & API state
-  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+  // API state
   const [apiUrl, setApiUrl] = useState<string>(DEFAULT_API_URL);
-  const [showServerModal, setShowServerModal] = useState(false);
-  const [tempApiUrl, setTempApiUrl] = useState('');
 
   // Undo deletion notification
   const [undoItem, setUndoItem] = useState<Expense | null>(null);
@@ -417,7 +412,6 @@ export default function Home() {
           const dayData = await dayRes.json();
           const monthData = await monthRes.json();
 
-          setServerOnline(true);
           setDayTotal(dayData.total || 0);
           setExpenses(dayData.expenses || []);
           setMonthSummary(Array.isArray(monthData) ? monthData : []);
@@ -434,10 +428,9 @@ export default function Home() {
           return;
         }
       } catch {
-        // Backend unreachable -> offline mode
+        // Backend unreachable -> local fallback
       }
 
-      setServerOnline(false);
       applyLocalData(targetDate);
       setIsRefreshing(false);
     },
@@ -619,21 +612,6 @@ export default function Home() {
             </div>
 
             <div className="header-actions">
-              <button
-                type="button"
-                className={`server-status-pill ${serverOnline === true ? 'online' : serverOnline === false ? 'offline' : 'checking'}`}
-                onClick={() => {
-                  setTempApiUrl(apiUrl);
-                  setShowServerModal(true);
-                }}
-                title="Статус подключения"
-              >
-                <span className="status-dot" />
-                <span className="status-txt">
-                  {serverOnline === true ? 'Онлайн' : serverOnline === false ? 'Офлайн' : 'Связь...'}
-                </span>
-              </button>
-
               <button
                 type="button"
                 className={`refresh-btn ${isRefreshing ? 'rotating' : ''}`}
@@ -942,97 +920,6 @@ export default function Home() {
           )}
         </AnimatePresence>
 
-        {/* Server & Data Connection Modal */}
-        <AnimatePresence>
-          {showServerModal && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="modal-backdrop"
-              onClick={() => setShowServerModal(false)}
-            >
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0, y: 10 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.95, opacity: 0, y: 10 }}
-                className="modal-card"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="modal-head">
-                  <div className="modal-title-wrap">
-                    <Server size={18} />
-                    <h3>Связь с Telegram Ботом</h3>
-                  </div>
-                  <button
-                    type="button"
-                    className="modal-close"
-                    onClick={() => setShowServerModal(false)}
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-
-                <div className="modal-body">
-                  <div className="status-indicator-box">
-                    <span className="status-label">Статус соединения:</span>
-                    <span
-                      className={`status-pill-badge ${serverOnline ? 'online' : 'offline'}`}
-                    >
-                      {serverOnline ? '🟢 Подключено' : '🟡 Офлайн'}
-                    </span>
-                  </div>
-
-                  <div className="modal-info-row">
-                    <span>Telegram ID:</span>
-                    <code>{identityRef.current.userId}</code>
-                  </div>
-
-                  <div className="modal-field">
-                    <label>Адрес API бэкенда:</label>
-                    <input
-                      type="text"
-                      value={tempApiUrl}
-                      onChange={(e) => setTempApiUrl(e.target.value)}
-                      placeholder="http://localhost:5015"
-                      className="modal-input"
-                    />
-                    <small>
-                      Адрес сервера для синхронизации данных
-                    </small>
-                  </div>
-
-                  <div className="modal-actions">
-                    <button
-                      type="button"
-                      className="modal-save-btn"
-                      onClick={() => {
-                        const trimmed = tempApiUrl.trim().replace(/\/+$/, '');
-                        if (trimmed) {
-                          setApiUrl(trimmed);
-                          localStorage.setItem('pulqatta_custom_api', trimmed);
-                          setShowServerModal(false);
-                          loadData(selectedDate);
-                        }
-                      }}
-                    >
-                      Сохранить и проверить
-                    </button>
-                    <button
-                      type="button"
-                      className="modal-sync-btn"
-                      onClick={() => {
-                        setShowServerModal(false);
-                        loadData(selectedDate);
-                      }}
-                    >
-                      Синхронизировать сейчас
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
         </AnimatePresence>
       </div>
     </div>
