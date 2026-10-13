@@ -1,32 +1,37 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Check, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  Trash2,
+  Calendar,
+  RotateCcw,
+  RefreshCw,
+  Server,
+  X,
+} from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015';
 const USD_RATE = 12800;
-const SWIPE_THRESHOLD = 64;
-const MAX_SWIPE = 96;
+
+const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015';
 
 const CHART_COLORS = [
-  '#17171a',
-  '#4b5563',
-  '#78716c',
+  '#18181b',
+  '#3f3f46',
+  '#71717a',
   '#a16207',
-  '#b45309',
+  '#d97706',
   '#0f766e',
   '#4338ca',
   '#be123c',
-  '#6d28d9',
-  '#9ca3af',
+  '#7c3aed',
+  '#a8a29e',
 ];
-
-const formatMoney = (amount: number) =>
-  Math.round(amount).toLocaleString('ru-RU').replace(/\u00a0/g, '.');
-
-const parseMoney = (val: string) =>
-  parseInt(val.replace(/[.\s,]/g, ''), 10) || 0;
 
 const CATEGORIES = [
   { key: 'Food', label: 'Еда' },
@@ -41,7 +46,30 @@ const CATEGORIES = [
   { key: 'Other', label: 'Прочее' },
 ] as const;
 
-const getCategoryLabel = (raw?: string | number) => {
+export type Expense = {
+  id: number;
+  amount: number;
+  category?: string | number;
+  note?: string | null;
+  createdAt?: string;
+};
+
+export type CategorySummary = {
+  category: string | number;
+  totalAmount: number;
+};
+
+function formatMoney(amount: number): string {
+  return Math.round(amount)
+    .toLocaleString('ru-RU')
+    .replace(/\u00a0/g, '.');
+}
+
+function parseMoney(val: string): number {
+  return parseInt(val.replace(/[.\s,]/g, ''), 10) || 0;
+}
+
+function getCategoryLabel(raw?: string | number): string {
   if (raw === undefined || raw === null) return 'Прочее';
   if (typeof raw === 'number' || !Number.isNaN(Number(raw))) {
     const idx = Number(raw);
@@ -53,9 +81,9 @@ const getCategoryLabel = (raw?: string | number) => {
       c.label.toLowerCase() === String(raw).toLowerCase()
   );
   return found ? found.label : String(raw);
-};
+}
 
-const getCategoryKey = (raw?: string | number): string => {
+function getCategoryKey(raw?: string | number): string {
   if (raw === undefined || raw === null) return 'Other';
   if (typeof raw === 'number' || !Number.isNaN(Number(raw))) {
     const idx = Number(raw);
@@ -67,32 +95,43 @@ const getCategoryKey = (raw?: string | number): string => {
       c.label.toLowerCase() === String(raw).toLowerCase()
   );
   return found ? found.key : 'Other';
-};
+}
 
-type Expense = {
-  id: number;
-  amount: number;
-  category?: string | number;
-  note?: string | null;
-  createdAt?: string;
-};
+function getLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
-type CategorySummary = {
-  category: string | number;
-  totalAmount: number;
-};
+function formatDateDisplay(dateStr: string): string {
+  const today = getLocalDateString(new Date());
+  const yesterday = getLocalDateString(new Date(Date.now() - 86400000));
 
-function resolveTelegramIdentity(): { initData: string; userId: string } {
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+
+  const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  const dayName = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][d.getDay()];
+  const formatted = `${d.getDate()} ${months[d.getMonth()]}, ${dayName}`;
+
+  if (dateStr === today) return `Сегодня (${formatted})`;
+  if (dateStr === yesterday) return `Вчера (${formatted})`;
+  return formatted;
+}
+
+function resolveTelegramIdentity(): { initData: string; userId: string; username: string } {
   if (typeof window === 'undefined') {
-    return { initData: '', userId: '111111111' };
+    return { initData: '', userId: '111111111', username: 'Тест' };
   }
 
   // @ts-ignore
   const tg = window.Telegram?.WebApp;
   let initData: string = tg?.initData || '';
   let userId: string = tg?.initDataUnsafe?.user?.id ? String(tg.initDataUnsafe.user.id) : '';
+  let username: string = tg?.initDataUnsafe?.user?.first_name || tg?.initDataUnsafe?.user?.username || '';
 
-  // Also check URL hash (#tgWebAppData=...) in case script initialized late
   if (!initData && window.location.hash.includes('tgWebAppData=')) {
     const hashParams = new URLSearchParams(window.location.hash.slice(1));
     initData = hashParams.get('tgWebAppData') || '';
@@ -105,13 +144,13 @@ function resolveTelegramIdentity(): { initData: string; userId: string } {
       if (userJson) {
         const parsed = JSON.parse(userJson);
         if (parsed?.id) userId = String(parsed.id);
+        if (parsed?.first_name) username = parsed.first_name;
       }
     } catch {
       // ignore
     }
   }
 
-  // If opened in a normal browser outside Telegram, assign a unique per-browser ID
   if (!userId) {
     let storedUid = localStorage.getItem('pulqatta_uid_v2');
     if (!storedUid) {
@@ -119,9 +158,10 @@ function resolveTelegramIdentity(): { initData: string; userId: string } {
       localStorage.setItem('pulqatta_uid_v2', storedUid);
     }
     userId = storedUid;
+    username = 'Гость';
   }
 
-  return { initData, userId };
+  return { initData, userId, username };
 }
 
 function getLocalExpenses(userId: string): Expense[] {
@@ -145,47 +185,7 @@ function saveLocalExpenses(userId: string, list: Expense[]) {
   }
 }
 
-function computeSummariesFromList(list: Expense[]) {
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-
-  const todayList = list.filter((e) => {
-    const t = e.createdAt ? new Date(e.createdAt).getTime() : Date.now();
-    return t >= startOfDay;
-  });
-
-  const monthList = list.filter((e) => {
-    const t = e.createdAt ? new Date(e.createdAt).getTime() : Date.now();
-    return t >= startOfMonth;
-  });
-
-  const todaySum = todayList.reduce((acc, item) => acc + Number(item.amount || 0), 0);
-
-  const grouped = new Map<string, number>();
-  for (const item of monthList) {
-    const key = getCategoryKey(item.category);
-    grouped.set(key, (grouped.get(key) || 0) + Number(item.amount || 0));
-  }
-
-  const summary: CategorySummary[] = Array.from(grouped.entries())
-    .map(([category, totalAmount]) => ({ category, totalAmount }))
-    .sort((a, b) => b.totalAmount - a.totalAmount);
-
-  return { todayList, todaySum, summary };
-}
-
-function clampSwipe(rawDelta: number): number {
-  const sign = Math.sign(rawDelta);
-  const abs = Math.abs(rawDelta);
-  if (abs <= SWIPE_THRESHOLD) {
-    return rawDelta;
-  }
-  const extra = abs - SWIPE_THRESHOLD;
-  const damped = SWIPE_THRESHOLD + (MAX_SWIPE - SWIPE_THRESHOLD) * Math.tanh(extra / 70);
-  return sign * Math.min(MAX_SWIPE, damped);
-}
-
+// Butter-smooth, zero-lag swipeable row with hardware accelerated transform
 function SwipeableExpenseRow({
   expense,
   isBeingEdited,
@@ -195,11 +195,13 @@ function SwipeableExpenseRow({
   expense: Expense;
   isBeingEdited: boolean;
   onEdit: (expense: Expense) => void;
-  onDelete: (id: number) => void;
+  onDelete: (expense: Expense) => void;
 }) {
-  const [offsetX, setOffsetX] = useState(0);
-  const [dragging, setDragging] = useState(false);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const startXRef = useRef<number | null>(null);
+  const currentXRef = useRef(0);
+  const isDraggingRef = useRef(false);
+  const [activeMode, setActiveMode] = useState<'none' | 'edit' | 'delete'>('none');
 
   const catLabel = getCategoryLabel(expense.category);
   const hasNote = Boolean(expense.note && expense.note.trim());
@@ -207,84 +209,91 @@ function SwipeableExpenseRow({
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     startXRef.current = e.clientX;
-    setDragging(true);
+    currentXRef.current = 0;
+    isDraggingRef.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
-  };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragging || startXRef.current === null) return;
-    const rawDelta = e.clientX - startXRef.current;
-    setOffsetX(clampSwipe(rawDelta));
-  };
-
-  const finishSwipe = () => {
-    if (!dragging) return;
-    setDragging(false);
-    startXRef.current = null;
-
-    if (offsetX <= -SWIPE_THRESHOLD) {
-      setOffsetX(0);
-      onDelete(expense.id);
-    } else if (offsetX >= SWIPE_THRESHOLD) {
-      setOffsetX(0);
-      onEdit(expense);
-    } else {
-      setOffsetX(0);
+    if (rowRef.current) {
+      rowRef.current.style.transition = 'none';
     }
   };
 
-  const isSwiping = Math.abs(offsetX) > 3;
-  const isDeleteMode = offsetX < 0;
-  const isReady = Math.abs(offsetX) >= SWIPE_THRESHOLD;
-  const glowClass = isSwiping ? (isDeleteMode ? 'glow-delete' : 'glow-edit') : '';
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current || startXRef.current === null || !rowRef.current) return;
+    const delta = e.clientX - startXRef.current;
+
+    // Apply damping curve directly without triggering React re-renders
+    let clamped = delta;
+    if (clamped > 80) clamped = 80 + (clamped - 80) * 0.2;
+    if (clamped < -80) clamped = -80 + (clamped + 80) * 0.2;
+
+    currentXRef.current = clamped;
+    rowRef.current.style.transform = `translate3d(${clamped}px, 0, 0)`;
+
+    if (clamped <= -50) {
+      if (activeMode !== 'delete') setActiveMode('delete');
+    } else if (clamped >= 50) {
+      if (activeMode !== 'edit') setActiveMode('edit');
+    } else if (activeMode !== 'none') {
+      setActiveMode('none');
+    }
+  };
+
+  const handlePointerUp = () => {
+    if (!isDraggingRef.current || !rowRef.current) return;
+    isDraggingRef.current = false;
+    startXRef.current = null;
+    const finalX = currentXRef.current;
+
+    rowRef.current.style.transition = 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)';
+    rowRef.current.style.transform = 'translate3d(0, 0, 0)';
+    setActiveMode('none');
+
+    // Threshold trigger
+    if (finalX <= -65) {
+      onDelete(expense);
+    } else if (finalX >= 65) {
+      onEdit(expense);
+    }
+  };
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 8, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.94, x: -30, transition: { duration: 0.18 } }}
-      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-      className={`swipe-item-wrap ${glowClass}`}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, height: 0, scale: 0.95, transition: { duration: 0.16 } }}
+      className={`swipe-item-wrap ${activeMode === 'delete' ? 'mode-delete' : activeMode === 'edit' ? 'mode-edit' : ''}`}
     >
-      <div
-        className={`swipe-track ${isSwiping ? 'visible' : ''} ${
-          isDeleteMode ? 'mode-delete' : 'mode-edit'
-        } ${isReady ? 'ready' : ''}`}
-        aria-hidden="true"
-      >
-        <div className="swipe-icon-badge">
-          {isDeleteMode ? <Trash2 size={17} strokeWidth={2.2} /> : <Pencil size={17} strokeWidth={2.2} />}
+      <div className="swipe-actions-bg">
+        <div className={`swipe-action-indicator edit ${activeMode === 'edit' ? 'active' : ''}`}>
+          <Pencil size={15} strokeWidth={2.4} />
+          <span>Изменить</span>
+        </div>
+        <div className={`swipe-action-indicator delete ${activeMode === 'delete' ? 'active' : ''}`}>
+          <span>Удалить</span>
+          <Trash2 size={15} strokeWidth={2.4} />
         </div>
       </div>
 
       <div
+        ref={rowRef}
         className={`history-item ${isBeingEdited ? 'editing' : ''}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={finishSwipe}
-        onPointerCancel={finishSwipe}
-        style={{
-          transform: `translate3d(${offsetX}px, 0, 0)`,
-          transition: dragging
-            ? 'none'
-            : 'transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, box-shadow 0.2s ease',
-        }}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       >
         <div className="history-main">
           <span className="history-badge">{catLabel.charAt(0)}</span>
           <div className="history-text">
-            <span className="history-name">
-              {hasNote ? expense.note : catLabel}
-            </span>
+            <span className="history-name">{hasNote ? expense.note : catLabel}</span>
             {hasNote && <span className="history-sub">{catLabel}</span>}
           </div>
         </div>
         <div className="history-right">
           <div className="history-amount-pill">
-            <span className="history-amount numbers">
-              {formatMoney(expense.amount)}
-            </span>
+            <span className="history-amount numbers">{formatMoney(expense.amount)}</span>
             <span className="history-currency">UZS</span>
           </div>
         </div>
@@ -294,160 +303,175 @@ function SwipeableExpenseRow({
 }
 
 export default function Home() {
-  const [activeView, setActiveView] = useState<'today' | 'month'>('today');
-  const [todayTotal, setTodayTotal] = useState(0);
+  const [activeView, setActiveView] = useState<'day' | 'month'>('day');
+  const [selectedDate, setSelectedDate] = useState<string>(() => getLocalDateString());
+  const [dayTotal, setDayTotal] = useState(0);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [monthSummary, setMonthSummary] = useState<CategorySummary[]>([]);
+  const [allMonthExpenses, setAllMonthExpenses] = useState<Expense[]>([]);
 
+  // Draft inputs
   const [draft, setDraft] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Food');
   const [note, setNote] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const identityRef = useRef<{ initData: string; userId: string }>({
+  // Connection & API state
+  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+  const [apiUrl, setApiUrl] = useState<string>(DEFAULT_API_URL);
+  const [showServerModal, setShowServerModal] = useState(false);
+  const [tempApiUrl, setTempApiUrl] = useState('');
+
+  // Undo deletion notification
+  const [undoItem, setUndoItem] = useState<Expense | null>(null);
+  const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [, startTransition] = useTransition();
+
+  const identityRef = useRef<{ initData: string; userId: string; username: string }>({
     initData: '',
     userId: '111111111',
+    username: 'Тест',
   });
 
-  // Category strip scroll & drag refs
   const stripRef = useRef<HTMLDivElement | null>(null);
   const amountInputRef = useRef<HTMLInputElement | null>(null);
-  const isDraggingRef = useRef(false);
-  const didMoveRef = useRef(false);
-  const startXRef = useRef(0);
-  const scrollLeftRef = useRef(0);
-  const [isDragging, setIsDragging] = useState(false);
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Initial load
+  useEffect(() => {
+    // @ts-ignore
+    const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : undefined;
+    if (tg) {
+      tg.ready?.();
+      tg.expand?.();
+    }
+    identityRef.current = resolveTelegramIdentity();
+
+    const savedApi = localStorage.getItem('pulqatta_custom_api');
+    if (savedApi) {
+      setApiUrl(savedApi);
+    }
+  }, []);
 
   const getHeaders = useCallback(() => {
     const { initData, userId } = identityRef.current;
     return {
       'Content-Type': 'application/json',
-      'X-Telegram-Init-Data': initData || 'fake_init_data_for_local_testing',
+      'X-Telegram-Init-Data': initData || 'mini_app_active',
       'X-Telegram-User-Id': userId,
     };
   }, []);
 
-  const applyLocalFallback = useCallback(() => {
-    const { userId } = identityRef.current;
-    const localList = getLocalExpenses(userId);
-    const { todayList, todaySum, summary } = computeSummariesFromList(localList);
-    setTodayTotal(todaySum);
-    setExpenses(todayList);
-    setMonthSummary(summary);
-  }, []);
+  // Compute local metrics for offline mode
+  const applyLocalData = useCallback(
+    (targetDate: string) => {
+      const { userId } = identityRef.current;
+      const all = getLocalExpenses(userId);
 
-  const loadData = useCallback(async () => {
-    const headers = getHeaders();
-    const { userId } = identityRef.current;
+      const dayItems = all.filter((e) => {
+        const itemDate = e.createdAt ? e.createdAt.slice(0, 10) : getLocalDateString();
+        return itemDate === targetDate;
+      });
 
-    try {
-      const [todayRes, monthRes] = await Promise.all([
-        fetch(`${API_URL}/api/expenses/today`, { headers }),
-        fetch(`${API_URL}/api/expenses/month`, { headers }),
-      ]);
+      const targetMonthPrefix = targetDate.slice(0, 7);
+      const monthItems = all.filter((e) => {
+        const itemDate = e.createdAt ? e.createdAt.slice(0, 10) : getLocalDateString();
+        return itemDate.startsWith(targetMonthPrefix);
+      });
 
-      if (todayRes.ok && monthRes.ok) {
-        const data = await todayRes.json();
-        const monthData = await monthRes.json();
-        const serverExpenses: Expense[] = data.expenses || [];
-        setTodayTotal(data.total || 0);
-        setExpenses(serverExpenses);
-        setMonthSummary(Array.isArray(monthData) ? monthData : []);
-        saveLocalExpenses(userId, serverExpenses);
-        return;
+      const sum = dayItems.reduce((acc, it) => acc + Number(it.amount || 0), 0);
+      setDayTotal(sum);
+      setExpenses(dayItems);
+      setAllMonthExpenses(monthItems);
+
+      const grouped = new Map<string, number>();
+      for (const item of monthItems) {
+        const key = getCategoryKey(item.category);
+        grouped.set(key, (grouped.get(key) || 0) + Number(item.amount || 0));
       }
-    } catch {
-      // Backend unreachable (e.g., mobile without tunnel) -> use per-user local storage
-    }
+      const summary: CategorySummary[] = Array.from(grouped.entries())
+        .map(([category, totalAmount]) => ({ category, totalAmount }))
+        .sort((a, b) => b.totalAmount - a.totalAmount);
+      setMonthSummary(summary);
+    },
+    []
+  );
 
-    applyLocalFallback();
-  }, [getHeaders, applyLocalFallback]);
+  // Load data from backend or fallback to local
+  const loadData = useCallback(
+    async (targetDate: string = selectedDate) => {
+      setIsRefreshing(true);
+      const headers = getHeaders();
+      const { userId } = identityRef.current;
+
+      try {
+        const [dayRes, monthRes] = await Promise.all([
+          fetch(`${apiUrl}/api/expenses/by-date?date=${targetDate}`, { headers }),
+          fetch(`${apiUrl}/api/expenses/month`, { headers }),
+        ]);
+
+        if (dayRes.ok && monthRes.ok) {
+          const dayData = await dayRes.json();
+          const monthData = await monthRes.json();
+
+          setServerOnline(true);
+          setDayTotal(dayData.total || 0);
+          setExpenses(dayData.expenses || []);
+          setMonthSummary(Array.isArray(monthData) ? monthData : []);
+
+          // Sync into local backup
+          const currentLocal = getLocalExpenses(userId);
+          const otherExpenses = currentLocal.filter((e) => {
+            const itemDate = e.createdAt ? e.createdAt.slice(0, 10) : '';
+            return itemDate !== targetDate;
+          });
+          const merged = [...(dayData.expenses || []), ...otherExpenses];
+          saveLocalExpenses(userId, merged);
+          setIsRefreshing(false);
+          return;
+        }
+      } catch {
+        // Backend unreachable -> offline mode
+      }
+
+      setServerOnline(false);
+      applyLocalData(targetDate);
+      setIsRefreshing(false);
+    },
+    [apiUrl, getHeaders, applyLocalData, selectedDate]
+  );
 
   useEffect(() => {
-    // @ts-ignore
-    const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : undefined;
-    if (tg) {
-      tg.ready();
-      tg.expand();
-    }
-    identityRef.current = resolveTelegramIdentity();
-    loadData();
-  }, [loadData]);
+    loadData(selectedDate);
+  }, [loadData, selectedDate]);
 
-  // Native non-passive wheel listener for smooth horizontal scrolling with mouse wheel
-  useEffect(() => {
-    const el = stripRef.current;
-    if (!el) return;
-
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY !== 0 || e.deltaX !== 0) {
-        e.preventDefault();
-        el.scrollLeft += e.deltaY !== 0 ? e.deltaY : e.deltaX;
-      }
-    };
-
-    const resetWindowHorizontalScroll = () => {
-      if (window.scrollX !== 0) {
-        window.scrollTo(0, window.scrollY);
-      }
-      if (document.documentElement.scrollLeft !== 0) {
-        document.documentElement.scrollLeft = 0;
-      }
-      if (document.body.scrollLeft !== 0) {
-        document.body.scrollLeft = 0;
-      }
-    };
-
-    el.addEventListener('wheel', onWheel, { passive: false });
-    window.addEventListener('scroll', resetWindowHorizontalScroll, { passive: true });
-    return () => {
-      el.removeEventListener('wheel', onWheel);
-      window.removeEventListener('scroll', resetWindowHorizontalScroll);
-    };
-  }, []);
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = stripRef.current;
-    if (!el) return;
-    isDraggingRef.current = true;
-    didMoveRef.current = false;
-    setIsDragging(true);
-    startXRef.current = e.pageX - el.offsetLeft;
-    scrollLeftRef.current = el.scrollLeft;
+  // Date navigation handlers
+  const handleShiftDay = (direction: 'prev' | 'next') => {
+    const parts = selectedDate.split('-');
+    if (parts.length !== 3) return;
+    const cur = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    cur.setDate(cur.getDate() + (direction === 'prev' ? -1 : 1));
+    const nextDate = getLocalDateString(cur);
+    setSelectedDate(nextDate);
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDraggingRef.current || !stripRef.current) return;
-    e.preventDefault();
-    const x = e.pageX - stripRef.current.offsetLeft;
-    const walk = (x - startXRef.current) * 1.4;
-    if (Math.abs(walk) > 5) {
-      didMoveRef.current = true;
-    }
-    stripRef.current.scrollLeft = scrollLeftRef.current - walk;
+  const handleJumpToday = () => {
+    setSelectedDate(getLocalDateString(new Date()));
   };
 
-  const stopDragging = () => {
-    isDraggingRef.current = false;
-    setIsDragging(false);
-  };
-
-  const scrollCategories = (dir: 'left' | 'right') => {
-    const el = stripRef.current;
-    if (!el) return;
-    el.scrollBy({
-      left: dir === 'left' ? -160 : 160,
-      behavior: 'smooth',
-    });
-  };
-
-  const handleStartEdit = (expense: Expense) => {
-    setEditingId(expense.id);
-    setDraft(formatMoney(expense.amount));
-    setSelectedCategory(getCategoryKey(expense.category));
-    setNote(expense.note || '');
+  const handleStartEdit = (item: Expense) => {
+    setEditingId(item.id);
+    setDraft(formatMoney(item.amount));
+    setSelectedCategory(getCategoryKey(item.category));
+    setNote(item.note || '');
     amountInputRef.current?.focus({ preventScroll: true });
+
+    // Haptic feedback
+    // @ts-ignore
+    window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
   };
 
   const handleCancelEdit = () => {
@@ -465,10 +489,14 @@ export default function Home() {
     const isEditing = editingId !== null;
     const trimmedNote = note.trim() || null;
 
+    // Use current time if today, or selectedDate noon if past/future day
+    const isToday = selectedDate === getLocalDateString();
+    const createdTimestamp = isToday
+      ? new Date().toISOString()
+      : `${selectedDate}T12:00:00.000Z`;
+
     try {
-      const url = isEditing
-        ? `${API_URL}/api/expenses/${editingId}`
-        : `${API_URL}/api/expenses`;
+      const url = isEditing ? `${apiUrl}/api/expenses/${editingId}` : `${apiUrl}/api/expenses`;
       const method = isEditing ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -478,6 +506,7 @@ export default function Home() {
           amount,
           category: selectedCategory,
           note: trimmedNote,
+          createdAt: isEditing ? undefined : createdTimestamp,
         }),
       });
 
@@ -485,16 +514,17 @@ export default function Home() {
         setDraft('');
         setNote('');
         setEditingId(null);
-        await loadData();
+        await loadData(selectedDate);
+        setIsSubmitting(false);
+        // @ts-ignore
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
         return;
       }
     } catch {
-      // Fallback to local storage per Telegram user
-    } finally {
-      setIsSubmitting(false);
+      // offline fallback
     }
 
-    // Local per-user fallback save when offline/mobile
+    // Local state fallback
     const currentList = getLocalExpenses(userId);
     let updatedList: Expense[];
     if (isEditing && editingId !== null) {
@@ -509,7 +539,7 @@ export default function Home() {
         amount,
         category: selectedCategory,
         note: trimmedNote,
-        createdAt: new Date().toISOString(),
+        createdAt: createdTimestamp,
       };
       updatedList = [newExpense, ...currentList];
     }
@@ -517,188 +547,219 @@ export default function Home() {
     setDraft('');
     setNote('');
     setEditingId(null);
-    applyLocalFallback();
+    setIsSubmitting(false);
+    applyLocalData(selectedDate);
+    // @ts-ignore
+    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
   };
 
-  const handleDeleteExpense = async (id: number) => {
-    if (editingId === id) {
+  const handleDeleteExpense = (target: Expense) => {
+    if (editingId === target.id) {
       handleCancelEdit();
     }
     const { userId } = identityRef.current;
 
-    // Update local backup immediately
-    const updatedLocal = getLocalExpenses(userId).filter((item) => item.id !== id);
+    // Immediately remove from UI
+    setExpenses((prev) => prev.filter((item) => item.id !== target.id));
+    setDayTotal((prev) => Math.max(0, prev - target.amount));
+
+    // Save to local backup
+    const updatedLocal = getLocalExpenses(userId).filter((item) => item.id !== target.id);
     saveLocalExpenses(userId, updatedLocal);
 
-    const target = expenses.find((item) => item.id === id);
-    setExpenses((prev) => prev.filter((item) => item.id !== id));
-    if (target) {
-      setTodayTotal((prev) => Math.max(0, prev - target.amount));
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/api/expenses/${id}`, {
+    // Show undo snackbar
+    setUndoItem(target);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => {
+      setUndoItem(null);
+      // Finalize backend delete after undo window expires
+      fetch(`${apiUrl}/api/expenses/${target.id}`, {
         method: 'DELETE',
         headers: getHeaders(),
-      });
-      if (res.ok) {
-        await loadData();
-        return;
-      }
-    } catch {
-      // Offline fallback
-    }
+      }).catch(() => {});
+    }, 4500);
 
-    applyLocalFallback();
+    // @ts-ignore
+    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('warning');
   };
 
-  const handleDraftChange = (value: string) => {
-    const amount = parseMoney(value);
-    setDraft(amount ? formatMoney(amount) : '');
-  };
+  const handleRestoreUndo = () => {
+    if (!undoItem) return;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleQuickAdd();
-    } else if (e.key === 'Escape' && editingId !== null) {
-      handleCancelEdit();
-    }
-  };
+    const item = undoItem;
+    setUndoItem(null);
 
-  const lockHorizontalScroll = (e: React.UIEvent<HTMLElement>) => {
-    if (e.currentTarget.scrollLeft !== 0) {
-      e.currentTarget.scrollLeft = 0;
-    }
+    // Re-add to UI
+    setExpenses((prev) => [item, ...prev]);
+    setDayTotal((prev) => prev + item.amount);
+
+    // Re-add to local storage
+    const { userId } = identityRef.current;
+    const current = getLocalExpenses(userId);
+    saveLocalExpenses(userId, [item, ...current]);
+
+    // @ts-ignore
+    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
   };
 
   const monthTotal = monthSummary.reduce((sum, item) => sum + item.totalAmount, 0);
-  const displayedTotal = activeView === 'today' ? todayTotal : monthTotal;
+  const displayedTotal = activeView === 'day' ? dayTotal : monthTotal;
   const displayedUsd = (displayedTotal / USD_RATE).toFixed(2);
+  const isToday = selectedDate === getLocalDateString();
 
   return (
-    <div className="miniapp-root" onScroll={lockHorizontalScroll}>
-      <div className="miniapp-shell" onScroll={lockHorizontalScroll}>
-        <main className="app-screen" onScroll={lockHorizontalScroll}>
+    <div className="miniapp-root">
+      <div className="miniapp-shell">
+        <main className="app-screen">
+          {/* Top Header */}
           <header className="miniapp-header">
             <div className="brand-wrap">
-              <img src="/logo.png?v=2" alt="PulQatta?" className="brand-logo" />
+              <img src="/logo.png?v=3" alt="PulQatta" className="brand-logo" />
             </div>
-            <div className="status-tabs" role="tablist" aria-label="Период">
+
+            <div className="header-actions">
               <button
                 type="button"
-                role="tab"
-                aria-selected={activeView === 'today'}
-                className={`status-tag ${activeView === 'today' ? 'active' : ''}`}
-                onClick={() => setActiveView('today')}
+                className={`server-status-pill ${serverOnline === true ? 'online' : serverOnline === false ? 'offline' : 'checking'}`}
+                onClick={() => {
+                  setTempApiUrl(apiUrl);
+                  setShowServerModal(true);
+                }}
+                title="Статус подключения"
               >
-                Сегодня
+                <span className="status-dot" />
+                <span className="status-txt">
+                  {serverOnline === true ? 'Бот онлайн' : serverOnline === false ? 'Локально' : 'Связь...'}
+                </span>
               </button>
+
               <button
                 type="button"
-                role="tab"
-                aria-selected={activeView === 'month'}
-                className={`status-tag ${activeView === 'month' ? 'active' : ''}`}
-                onClick={() => setActiveView('month')}
+                className={`refresh-btn ${isRefreshing ? 'rotating' : ''}`}
+                onClick={() => loadData(selectedDate)}
+                aria-label="Обновить данные"
               >
-                Месяц
+                <RefreshCw size={13} />
               </button>
+
+              <div className="status-tabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeView === 'day'}
+                  className={`status-tag ${activeView === 'day' ? 'active' : ''}`}
+                  onClick={() => setActiveView('day')}
+                >
+                  День
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeView === 'month'}
+                  className={`status-tag ${activeView === 'month' ? 'active' : ''}`}
+                  onClick={() => setActiveView('month')}
+                >
+                  Месяц
+                </button>
+              </div>
             </div>
           </header>
 
+          {/* Compact Balance Card */}
           <motion.section
             className="summary-card"
-            initial={{ opacity: 0, y: 6 }}
+            initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
+            transition={{ duration: 0.2 }}
           >
             <div className="summary-top">
               <div className="summary-label">
-                {activeView === 'today' ? 'Итого за сегодня' : 'Итого за месяц'}
+                {activeView === 'day'
+                  ? isToday
+                    ? 'Итого за сегодня'
+                    : `Итого за ${formatDateDisplay(selectedDate)}`
+                  : 'Всего за этот месяц'}
               </div>
               <div className="summary-usd numbers">≈ ${displayedUsd}</div>
             </div>
             <div className="summary-row">
-              <motion.span
-                key={`${activeView}-${displayedTotal}`}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                className="total-number numbers"
-              >
-                {formatMoney(displayedTotal || 0)}
-              </motion.span>
+              <span className="total-number numbers">{formatMoney(displayedTotal || 0)}</span>
               <span className="currency">UZS</span>
             </div>
           </motion.section>
 
+          {/* Day Navigation Bar (when in Day view) */}
+          {activeView === 'day' && (
+            <div className="day-picker-bar">
+              <button
+                type="button"
+                className="day-arrow-btn"
+                onClick={() => handleShiftDay('prev')}
+                aria-label="Предыдущий день"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <div
+                className="day-center-wrap"
+                onClick={() => dateInputRef.current?.showPicker?.()}
+              >
+                <Calendar size={13} className="cal-icon" />
+                <span className="day-label-text">{formatDateDisplay(selectedDate)}</span>
+                <input
+                  ref={dateInputRef}
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => {
+                    if (e.target.value) setSelectedDate(e.target.value);
+                  }}
+                  className="hidden-date-input"
+                />
+              </div>
+
+              {!isToday && (
+                <button type="button" className="today-jump-btn" onClick={handleJumpToday}>
+                  Сегодня
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="day-arrow-btn"
+                onClick={() => handleShiftDay('next')}
+                aria-label="Следующий день"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
+
+          {/* Compact Input Card */}
           <section className="input-card">
             <div className="input-card-head">
               <div className="field-label-wrap">
-                <label className="field-label" htmlFor="amount-input">
-                  {editingId !== null ? 'Изменить трату' : 'Новая трата'}
-                </label>
+                <span className="field-label">
+                  {editingId !== null ? 'Редактировать расход' : 'Новая трата'}
+                </span>
                 {editingId !== null && (
-                  <button
-                    type="button"
-                    className="cancel-edit-btn"
-                    onClick={handleCancelEdit}
-                  >
+                  <button type="button" className="cancel-edit-btn" onClick={handleCancelEdit}>
                     Отмена
                   </button>
                 )}
               </div>
-              <div className="cat-nav">
-                <button
-                  type="button"
-                  className="cat-nav-btn"
-                  onClick={() => scrollCategories('left')}
-                  aria-label="Категории влево"
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <button
-                  type="button"
-                  className="cat-nav-btn"
-                  onClick={() => scrollCategories('right')}
-                  aria-label="Категории вправо"
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
+              <span className="quick-date-hint">
+                {isToday ? 'Сегодня' : selectedDate.slice(5).replace('-', '.')}
+              </span>
             </div>
 
             <div className="category-strip-wrap">
-              <div
-                ref={stripRef}
-                className={`category-strip ${isDragging ? 'dragging' : ''}`}
-                role="radiogroup"
-                aria-label="Категория расхода"
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={stopDragging}
-                onMouseLeave={stopDragging}
-              >
+              <div ref={stripRef} className="category-strip" role="radiogroup">
                 {CATEGORIES.map((cat) => (
                   <button
                     key={cat.key}
                     type="button"
-                    onClick={(e) => {
-                      if (didMoveRef.current) return;
-                      setSelectedCategory(cat.key);
-                      const strip = stripRef.current;
-                      if (strip) {
-                        const maxScroll = Math.max(0, strip.scrollWidth - strip.clientWidth);
-                        const targetLeft =
-                          e.currentTarget.offsetLeft -
-                          strip.clientWidth / 2 +
-                          e.currentTarget.clientWidth / 2;
-                        strip.scrollTo({
-                          left: Math.min(maxScroll, Math.max(0, targetLeft)),
-                          behavior: 'smooth',
-                        });
-                      }
-                    }}
+                    onClick={() => setSelectedCategory(cat.key)}
                     className={`category-chip ${selectedCategory === cat.key ? 'active' : ''}`}
                   >
                     {cat.label}
@@ -715,9 +776,19 @@ export default function Home() {
                   type="text"
                   inputMode="numeric"
                   value={draft}
-                  onChange={(e) => handleDraftChange(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Сумма в UZS"
+                  onChange={(e) => {
+                    const parsed = parseMoney(e.target.value);
+                    setDraft(parsed ? formatMoney(parsed) : '');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleQuickAdd();
+                    } else if (e.key === 'Escape' && editingId !== null) {
+                      handleCancelEdit();
+                    }
+                  }}
+                  placeholder="Сумма в сумах"
                   className="quick-input numbers"
                 />
                 <button
@@ -725,38 +796,50 @@ export default function Home() {
                   className="add-trigger"
                   onClick={handleQuickAdd}
                   disabled={!parseMoney(draft) || isSubmitting}
-                  aria-label={editingId !== null ? 'Сохранить изменения' : 'Добавить расход'}
+                  aria-label={editingId !== null ? 'Сохранить' : 'Добавить'}
                 >
                   {editingId !== null ? <Check size={16} /> : <ArrowRight size={16} />}
                 </button>
               </div>
+
               <div className="note-row">
                 <input
                   type="text"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Заметка (необязательно)"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleQuickAdd();
+                    }
+                  }}
+                  placeholder="Комментарий к расходу..."
                   className="note-input"
                 />
               </div>
             </div>
           </section>
 
+          {/* History / Monthly Analytics Section */}
           <section className="history-box">
             <div className="history-header">
               <div className="history-title">
-                {activeView === 'today' ? 'Траты за сегодня' : 'График по категориям'}
+                {activeView === 'day'
+                  ? isToday
+                    ? 'Траты за сегодня'
+                    : `Траты (${formatDateDisplay(selectedDate)})`
+                  : 'Структура расходов за месяц'}
               </div>
-              {activeView === 'today' && expenses.length > 0 && (
-                <span className="swipe-hint">← удалить · изменить →</span>
+              {activeView === 'day' && expenses.length > 0 && (
+                <span className="swipe-hint">← свайп для действий →</span>
               )}
             </div>
 
+            {/* Monthly View Bars */}
             {activeView === 'month' && monthSummary.length > 0 && monthTotal > 0 && (
-              <div className="chart-bar-wrap" aria-label="Распределение расходов за месяц">
+              <div className="chart-bar-wrap">
                 {monthSummary.map((item, idx) => {
-                  const pct = Math.max(4, Math.round((item.totalAmount / monthTotal) * 100));
+                  const pct = Math.max(3, Math.round((item.totalAmount / monthTotal) * 100));
                   return (
                     <div
                       key={String(item.category) + idx}
@@ -771,8 +854,9 @@ export default function Home() {
               </div>
             )}
 
+            {/* Content List */}
             <div className="history-list">
-              {activeView === 'today' ? (
+              {activeView === 'day' ? (
                 expenses.length > 0 ? (
                   <AnimatePresence initial={false}>
                     {expenses.map((expense) => (
@@ -786,33 +870,27 @@ export default function Home() {
                     ))}
                   </AnimatePresence>
                 ) : (
-                  <div className="empty-state">Первые траты за сегодня появятся здесь</div>
+                  <div className="empty-state">
+                    <span className="empty-icon">☕</span>
+                    <span>Нет трат за этот день</span>
+                  </div>
                 )
               ) : monthSummary.length > 0 ? (
-                <AnimatePresence initial={false}>
+                <div className="month-cards-list">
                   {monthSummary.map((item, idx) => {
                     const catLabel = getCategoryLabel(item.category);
                     const pct = monthTotal > 0 ? Math.round((item.totalAmount / monthTotal) * 100) : 0;
                     const barColor = CHART_COLORS[idx % CHART_COLORS.length];
                     return (
-                      <motion.div
-                        key={String(item.category) + idx}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.2, delay: idx * 0.03 }}
-                        className="month-item-col"
-                      >
+                      <div key={String(item.category) + idx} className="month-item-col">
                         <div className="month-item-top">
                           <div className="history-main">
-                            <span
-                              className="history-badge"
-                              style={{ backgroundColor: barColor }}
-                            >
+                            <span className="history-badge" style={{ backgroundColor: barColor }}>
                               {catLabel.charAt(0)}
                             </span>
                             <div className="history-text">
                               <span className="history-name">{catLabel}</span>
-                              <span className="history-sub">{pct}% от месяца</span>
+                              <span className="history-sub">{pct}% от общих трат</span>
                             </div>
                           </div>
                           <div className="history-right">
@@ -830,16 +908,132 @@ export default function Home() {
                             style={{ width: `${pct}%`, backgroundColor: barColor }}
                           />
                         </div>
-                      </motion.div>
+                      </div>
                     );
                   })}
-                </AnimatePresence>
+                </div>
               ) : (
-                <div className="empty-state">За этот месяц трат пока нет</div>
+                <div className="empty-state">
+                  <span className="empty-icon">📊</span>
+                  <span>В этом месяце трат пока нет</span>
+                </div>
               )}
             </div>
           </section>
         </main>
+
+        {/* Undo Toast Notification */}
+        <AnimatePresence>
+          {undoItem && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              className="undo-toast"
+            >
+              <div className="undo-toast-text">
+                <span>Трата {formatMoney(undoItem.amount)} UZS удалена</span>
+              </div>
+              <button type="button" className="undo-btn" onClick={handleRestoreUndo}>
+                <RotateCcw size={13} />
+                <span>Отменить</span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Server & Data Connection Modal */}
+        <AnimatePresence>
+          {showServerModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="modal-backdrop"
+              onClick={() => setShowServerModal(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0, y: 10 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 10 }}
+                className="modal-card"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="modal-head">
+                  <div className="modal-title-wrap">
+                    <Server size={18} />
+                    <h3>Связь с Telegram Ботом</h3>
+                  </div>
+                  <button
+                    type="button"
+                    className="modal-close"
+                    onClick={() => setShowServerModal(false)}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="modal-body">
+                  <div className="status-indicator-box">
+                    <span className="status-label">Статус соединения:</span>
+                    <span
+                      className={`status-pill-badge ${serverOnline ? 'online' : 'offline'}`}
+                    >
+                      {serverOnline ? '🟢 Сервер подключен' : '🟡 Офлайн / Локальное хранилище'}
+                    </span>
+                  </div>
+
+                  <div className="modal-info-row">
+                    <span>Telegram ID:</span>
+                    <code>{identityRef.current.userId}</code>
+                  </div>
+
+                  <div className="modal-field">
+                    <label>Адрес API бэкенда:</label>
+                    <input
+                      type="text"
+                      value={tempApiUrl}
+                      onChange={(e) => setTempApiUrl(e.target.value)}
+                      placeholder="http://localhost:5015"
+                      className="modal-input"
+                    />
+                    <small>
+                      Если бот запущен на ПК, а приложение открыто в браузере, укажите http://localhost:5015
+                    </small>
+                  </div>
+
+                  <div className="modal-actions">
+                    <button
+                      type="button"
+                      className="modal-save-btn"
+                      onClick={() => {
+                        const trimmed = tempApiUrl.trim().replace(/\/+$/, '');
+                        if (trimmed) {
+                          setApiUrl(trimmed);
+                          localStorage.setItem('pulqatta_custom_api', trimmed);
+                          setShowServerModal(false);
+                          loadData(selectedDate);
+                        }
+                      }}
+                    >
+                      Сохранить и проверить
+                    </button>
+                    <button
+                      type="button"
+                      className="modal-sync-btn"
+                      onClick={() => {
+                        setShowServerModal(false);
+                        loadData(selectedDate);
+                      }}
+                    >
+                      Синхронизировать сейчас
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
