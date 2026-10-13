@@ -630,7 +630,7 @@ export default function Home() {
               >
                 <span className="status-dot" />
                 <span className="status-txt">
-                  {serverOnline === true ? 'Бот онлайн' : serverOnline === false ? 'Локально' : 'Связь...'}
+                  {serverOnline === true ? 'Онлайн' : serverOnline === false ? 'Офлайн' : 'Связь...'}
                 </span>
               </button>
 
@@ -979,7 +979,7 @@ export default function Home() {
                     <span
                       className={`status-pill-badge ${serverOnline ? 'online' : 'offline'}`}
                     >
-                      {serverOnline ? '🟢 Сервер подключен' : '🟡 Офлайн / Локальное хранилище'}
+                      {serverOnline ? '🟢 Подключено' : '🟡 Офлайн'}
                     </span>
                   </div>
 
@@ -998,7 +998,7 @@ export default function Home() {
                       className="modal-input"
                     />
                     <small>
-                      Если бот запущен на ПК, а приложение открыто в браузере, укажите http://localhost:5015
+                      Адрес сервера для синхронизации данных
                     </small>
                   </div>
 
