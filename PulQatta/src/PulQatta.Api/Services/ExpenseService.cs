@@ -19,12 +19,13 @@ public class ExpenseService : IExpenseService
     public async Task<ExpenseGetDto> AddExpenseAsync(long telegramId, decimal amount, Category category, string? note)
     {
         var user = await _userService.GetOrCreateUserAsync(telegramId);
+        var effectiveCategory = category == Category.Cafe ? Category.Food : category;
 
         var expense = new Expense
         {
             UserId = user.Id,
             Amount = amount,
-            Category = category,
+            Category = effectiveCategory,
             Note = note,
             CreatedAt = DateTime.UtcNow
         };
@@ -45,12 +46,13 @@ public class ExpenseService : IExpenseService
     public async Task<ExpenseGetDto> AddExpenseWithDateAsync(long telegramId, decimal amount, Category category, string? note, DateTime? createdAt)
     {
         var user = await _userService.GetOrCreateUserAsync(telegramId);
+        var effectiveCategory = category == Category.Cafe ? Category.Food : category;
 
         var expense = new Expense
         {
             UserId = user.Id,
             Amount = amount,
-            Category = category,
+            Category = effectiveCategory,
             Note = note,
             CreatedAt = createdAt.HasValue ? DateTime.SpecifyKind(createdAt.Value, DateTimeKind.Utc) : DateTime.UtcNow
         };
@@ -90,7 +92,7 @@ public class ExpenseService : IExpenseService
             .Select(e => new ExpenseGetDto
             {
                 Id = e.Id,
-                Category = e.Category,
+                Category = e.Category == Category.Cafe ? Category.Food : e.Category,
                 Amount = e.Amount,
                 Note = e.Note,
                 CreatedAt = e.CreatedAt
@@ -119,7 +121,7 @@ public class ExpenseService : IExpenseService
             .Select(e => new ExpenseGetDto
             {
                 Id = e.Id,
-                Category = e.Category,
+                Category = e.Category == Category.Cafe ? Category.Food : e.Category,
                 Amount = e.Amount,
                 Note = e.Note,
                 CreatedAt = e.CreatedAt
@@ -134,7 +136,7 @@ public class ExpenseService : IExpenseService
         var summary = await _context.Expenses
             .Include(e => e.User)
             .Where(e => e.User!.TelegramId == telegramId && e.CreatedAt >= startOfMonth)
-            .GroupBy(e => e.Category)
+            .GroupBy(e => e.Category == Category.Cafe ? Category.Food : e.Category)
             .Select(g => new CategorySummaryGetDto
             {
                 Category = g.Key,
@@ -183,7 +185,7 @@ public class ExpenseService : IExpenseService
         if (expense == null) return null;
 
         expense.Amount = amount;
-        expense.Category = category;
+        expense.Category = category == Category.Cafe ? Category.Food : category;
         expense.Note = note;
 
         await _context.SaveChangesAsync();

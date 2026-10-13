@@ -127,7 +127,20 @@ public class TelegramCommandHandler : ITelegramCommandHandler
 
     private async Task SendCategoryKeyboardAsync(ITelegramBotClient botClient, long chatId, decimal amount, string? note, CancellationToken cancellationToken)
     {
-        var categories = Enum.GetValues<Category>();
+        var categories = new[]
+        {
+            Category.Food,
+            Category.Transport,
+            Category.Utilities,
+            Category.Clothes,
+            Category.Electronics,
+            Category.Health,
+            Category.Games,
+            Category.Subscriptions,
+            Category.Credit,
+            Category.Investment,
+            Category.Other
+        };
         var keyboardButtons = new List<InlineKeyboardButton[]>();
         
         for (int i = 0; i < categories.Length; i += 2)
@@ -165,6 +178,7 @@ public class TelegramCommandHandler : ITelegramCommandHandler
         return category switch
         {
             Category.Food => "🍔 Еда",
+            Category.Cafe => "🍔 Еда",
             Category.Transport => "🚕 Транспорт",
             Category.Utilities => "💡 Коммуналка",
             Category.Health => "💊 Здоровье",
@@ -172,7 +186,8 @@ public class TelegramCommandHandler : ITelegramCommandHandler
             Category.Games => "🎮 Игры",
             Category.Clothes => "👕 Одежда",
             Category.Electronics => "💻 Техника",
-            Category.Cafe => "☕ Кафе",
+            Category.Credit => "💳 Кредит",
+            Category.Investment => "📈 Инвестиции",
             _ => "📦 Другое"
         };
     }
