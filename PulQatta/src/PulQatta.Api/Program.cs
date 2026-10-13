@@ -7,6 +7,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile("appsettings.Secrets.json", optional: true, reloadOnChange: true);
 
+// Configure dynamic port (Render sets PORT, default is 10000)
+var port = Environment.GetEnvironmentVariable("PORT") ?? builder.Configuration["PORT"] ?? "10000";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
 // Add services to the container.
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -16,9 +20,10 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Configure Database
+// Configure Database Connection (Neon postgres:// parser & Npgsql SSL Mode)
+var connectionString = ResolveConnectionString(builder.Configuration);
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+    options.UseNpgsql(connectionString));
 
 // Configure Services
 builder.Services.AddScoped<IUserService, UserService>();
@@ -28,13 +33,29 @@ builder.Services.AddScoped<ITelegramCommandHandler, TelegramCommandHandler>();
 builder.Services.AddScoped<ITelegramCallbackHandler, TelegramCallbackHandler>();
 builder.Services.AddSingleton<ITelegramAuthService, TelegramAuthService>();
 
+// Configure CORS
+var rawFrontendOrigin = builder.Configuration["FRONTEND_ORIGIN"];
+var normalizedOrigin = !string.IsNullOrWhiteSpace(rawFrontendOrigin)
+    ? rawFrontendOrigin.Trim().TrimEnd('/')
+    : null;
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        if (!string.IsNullOrEmpty(normalizedOrigin))
+        {
+            policy.WithOrigins(normalizedOrigin, "http://localhost:3000", "http://localhost:5015")
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
     });
 });
 
@@ -42,28 +63,41 @@ builder.Services.AddCors(options =>
 builder.Services.AddHttpClient("telegram_bot_client")
     .AddTypedClient<ITelegramBotClient>((httpClient, sp) =>
     {
-        var botToken = builder.Configuration["BOT_TOKEN"] ?? builder.Configuration["TelegramBotToken"] ?? throw new InvalidOperationException("BOT_TOKEN is not configured");
+        var botToken = builder.Configuration["BOT_TOKEN"] ?? builder.Configuration["TelegramBotToken"]
+            ?? throw new InvalidOperationException("BOT_TOKEN is not configured.");
         var options = new TelegramBotClientOptions(botToken);
         return new TelegramBotClient(options, httpClient);
     });
 
 builder.Services.AddHostedService<TelegramBotBackgroundService>();
 
-var port = builder.Configuration["PORT"];
-if (!string.IsNullOrEmpty(port))
-{
-    builder.WebHost.UseUrls($"http://*:{port}");
-}
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Automatic EF Core Migrations at startup
+using (var scope = app.Services.CreateScope())
+{
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        logger.LogInformation("Applying EF Core database migrations...");
+        await db.Database.MigrateAsync();
+        logger.LogInformation("EF Core database migrations applied successfully.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to apply EF Core database migrations.");
+    }
+}
+
+// Configure HTTP pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
+// Health check endpoint (200 OK without database query)
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 app.Use(async (context, next) =>
@@ -76,9 +110,52 @@ app.Use(async (context, next) =>
 });
 
 app.UseCors();
-
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();
+
+// Helper to resolve & parse connection strings from various sources (Neon postgres:// URI or key-value)
+static string ResolveConnectionString(IConfiguration configuration)
+{
+    var raw = configuration.GetConnectionString("Default")
+              ?? configuration.GetConnectionString("DefaultConnection")
+              ?? configuration["DATABASE_URL"]
+              ?? configuration["POSTGRES_URL"]
+              ?? configuration["ConnectionStrings:Default"]
+              ?? configuration["ConnectionStrings:DefaultConnection"];
+
+    if (string.IsNullOrWhiteSpace(raw))
+    {
+        throw new InvalidOperationException("Database connection string is not configured. Provide 'ConnectionStrings__Default' or 'DATABASE_URL'.");
+    }
+
+    raw = raw.Trim();
+
+    // Check if URI format from Neon (postgres:// or postgresql://)
+    if (raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+        raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        var uri = new Uri(raw);
+        var userInfo = uri.UserInfo.Split(':');
+        var username = Uri.UnescapeDataString(userInfo[0]);
+        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+        var host = uri.Host;
+        var dbPort = uri.Port > 0 ? uri.Port : 5432;
+        var database = uri.AbsolutePath.TrimStart('/');
+
+        return $"Host={host};Port={dbPort};Database={database};Username={username};Password={password};SSL Mode=Require;Trust Server Certificate=true;";
+    }
+
+    // Key-value format: enforce SSL Mode=Require for remote databases
+    var cs = raw;
+    var isLocal = cs.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
+                  cs.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+
+    if (!isLocal && !cs.Contains("SSL Mode", StringComparison.OrdinalIgnoreCase) && !cs.Contains("sslmode", StringComparison.OrdinalIgnoreCase))
+    {
+        cs = cs.TrimEnd(';') + ";SSL Mode=Require;Trust Server Certificate=true;";
+    }
+
+    return cs;
+}

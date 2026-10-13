@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 const USD_RATE = 12800;
-const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015';
+const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 export const CATEGORIES = [
   { key: 'Food', label: 'Еда', icon: '🍔', color: '#f59e0b' },

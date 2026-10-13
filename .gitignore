@@ -1,82 +1,66 @@
-# Ignore all bin/ and obj/ folders recursively
+# Build results
+[Bb]in/
+[Oo]bj/
 **/[Bb]in/
 **/[Oo]bj/
 
-# Ignore user-specific and IDE-related files recursively
-**/*.user
-**/*.suo
-**/*.vspx
-**/*.vsmdi
+# Node.js dependencies & builds
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+**/out/
+build/
+**/build/
+
+# User-specific & IDE files
 .vs/
 .vscode/
 .idea/
+*.user
+*.suo
+*.vspx
+*.vsmdi
+*.userosscache
+*.sln.docstates
 
-# Ignore packages, build artifacts and NuGet outputs
+# Packages & outputs
 packages/
 **/packages/
-**/*.nupkg
+*.nupkg
+artifacts/
 **/artifacts/
 
-# Ignore test results
+# Test results
 TestResults/
-**/*.trx
-**/*.coverage
-**/*.testsettings
+**/TestResults/
+*.trx
+*.coverage
+*.testsettings
 
-# Ignore local DB files
-**/*.db
-**/*.sqlite
-**/*.sqlite3
+# Local DB files
+*.db
+*.sqlite
+*.sqlite3
 
-# Ignore design and media files
-Design/
-**/*.psd
-**/*.ai
-**/*.xd
-
-# Ignore Xamarin/MAUI/Android/iOS output files
-**/*.apk
-**/*.aab
-**/*.ipa
-**/*.dll
-**/*.pdb
-**/*.so
-**/*.jar
-**/*.dex
-
-# Ignore temp, backup, and system files
-**/*~
-**/*.tmp
-**/*.bak
-**/*.swp
-**/*.swo
-.DS_Store
-Thumbs.db
-ehthumbs.db
-
-# Ignore environment and config secrets
+# Secrets & Environment files
 .env
 .env.*
 !.env.example
-deploy/social.secrets.env
-deploy/search.ai.env
-deploy/*.secrets.env
+!.env.*.example
+appsettings.Secrets.json
+**/appsettings.Secrets.json
+!appsettings.Secrets.example.json
 secrets.json
 appsettings.*.local.json
 
-# Single consolidated secrets file (keep the *.example.json template committed)
-appsettings.Secrets.json
-!appsettings.Secrets.example.json
-
-# Accidental local build dumps
-_build_check/
-.test-build/
-
-# Uploaded user media (keep folders via .gitkeep)
-**/wwwroot/avatars/*
-!**/wwwroot/avatars/.gitkeep
-**/wwwroot/stylefeed/*
-!**/wwwroot/stylefeed/.gitkeep
-
-# Local Serilog rolling files
+# Logs & temp
+logs/
 **/logs/
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db

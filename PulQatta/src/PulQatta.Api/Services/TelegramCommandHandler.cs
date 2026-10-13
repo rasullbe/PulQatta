@@ -9,10 +9,12 @@ namespace PulQatta.Api.Services;
 public class TelegramCommandHandler : ITelegramCommandHandler
 {
     private readonly IExpenseService _expenseService;
+    private readonly IConfiguration _configuration;
 
-    public TelegramCommandHandler(IExpenseService expenseService)
+    public TelegramCommandHandler(IExpenseService expenseService, IConfiguration configuration)
     {
         _expenseService = expenseService;
+        _configuration = configuration;
     }
 
     public async Task HandleCommandAsync(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
@@ -33,11 +35,13 @@ public class TelegramCommandHandler : ITelegramCommandHandler
 
     private async Task ProcessSlashCommandAsync(ITelegramBotClient botClient, Message message, long chatId, long telegramId, string text, CancellationToken cancellationToken)
     {
-        var webAppUrl = "https://sparkly-flan-a1ad41.netlify.app/";
-        var webAppKeyboard = new InlineKeyboardMarkup(new[]
-        {
-            InlineKeyboardButton.WithWebApp("📱 Открыть Mini App", new WebAppInfo { Url = webAppUrl }) 
-        });
+        var webAppUrl = _configuration["FRONTEND_ORIGIN"] ?? _configuration["WEBAPP_URL"];
+        InlineKeyboardMarkup? webAppKeyboard = !string.IsNullOrWhiteSpace(webAppUrl)
+            ? new InlineKeyboardMarkup(new[]
+            {
+                InlineKeyboardButton.WithWebApp("📱 Открыть Mini App", new WebAppInfo { Url = webAppUrl }) 
+            })
+            : null;
 
         switch (text.ToLower())
         {

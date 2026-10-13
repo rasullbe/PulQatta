@@ -1,0 +1,10 @@
+**/.git
+**/.gitignore
+**/.vs
+**/.vscode
+**/bin
+**/obj
+**/appsettings.Secrets.json
+**/node_modules
+**/*.user
+**/*.log

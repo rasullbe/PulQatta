@@ -1,0 +1,3 @@
+[build]
+  base = "PulQatta.Web"
+  command = "npm run build"
