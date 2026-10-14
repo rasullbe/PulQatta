@@ -22,22 +22,30 @@ public class ExpensesController : ControllerBase
     {
         telegramId = 0;
 
-        if (Request.Headers.TryGetValue("X-Telegram-Init-Data", out var initData) &&
-            !string.IsNullOrWhiteSpace(initData) &&
-            initData.ToString() != "fake_init_data_for_local_testing")
-        {
-            if (_telegramAuthService.ValidateInitData(initData.ToString(), out telegramId) && telegramId > 0)
-            {
-                return true;
-            }
-        }
-
+        // 1. Direct Telegram User ID header
         if (Request.Headers.TryGetValue("X-Telegram-User-Id", out var userIdHeader) &&
             long.TryParse(userIdHeader.ToString(), out var parsedUserId) &&
             parsedUserId > 0)
         {
             telegramId = parsedUserId;
             return true;
+        }
+
+        // 2. Validate X-Telegram-Init-Data (raw or URL-decoded)
+        if (Request.Headers.TryGetValue("X-Telegram-Init-Data", out var initData) &&
+            !string.IsNullOrWhiteSpace(initData) &&
+            initData.ToString() != "fake_init_data_for_local_testing" &&
+            initData.ToString() != "mini_app_active")
+        {
+            var raw = initData.ToString();
+            if (_telegramAuthService.ValidateInitData(raw, out telegramId) && telegramId > 0)
+            {
+                return true;
+            }
+            if (_telegramAuthService.ValidateInitData(System.Net.WebUtility.UrlDecode(raw), out telegramId) && telegramId > 0)
+            {
+                return true;
+            }
         }
 
         telegramId = 111111111;

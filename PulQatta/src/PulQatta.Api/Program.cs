@@ -33,29 +33,15 @@ builder.Services.AddScoped<ITelegramCommandHandler, TelegramCommandHandler>();
 builder.Services.AddScoped<ITelegramCallbackHandler, TelegramCallbackHandler>();
 builder.Services.AddSingleton<ITelegramAuthService, TelegramAuthService>();
 
-// Configure CORS
-var rawFrontendOrigin = builder.Configuration["FRONTEND_ORIGIN"];
-var normalizedOrigin = !string.IsNullOrWhiteSpace(rawFrontendOrigin)
-    ? rawFrontendOrigin.Trim().TrimEnd('/')
-    : null;
-
+// Configure CORS (Allow all Netlify origins, custom domains, and Telegram WebView)
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        if (!string.IsNullOrEmpty(normalizedOrigin))
-        {
-            policy.WithOrigins(normalizedOrigin, "http://localhost:3000", "http://localhost:5015")
-                  .AllowAnyMethod()
-                  .AllowAnyHeader()
-                  .AllowCredentials();
-        }
-        else
-        {
-            policy.AllowAnyOrigin()
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
-        }
+        policy.SetIsOriginAllowed(_ => true)
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials();
     });
 });
 

@@ -17,7 +17,22 @@ import {
 } from 'lucide-react';
 
 const USD_RATE = 12800;
-const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://pulqatta-api.onrender.com';
+
+const BACKEND_CATEGORY_MAP: Record<number, string> = {
+  0: 'Food',
+  1: 'Transport',
+  2: 'Utilities',
+  3: 'Health',
+  4: 'Subscriptions',
+  5: 'Games',
+  6: 'Clothes',
+  7: 'Electronics',
+  8: 'Food', // Cafe
+  9: 'Credit',
+  10: 'Investment',
+  11: 'Other',
+};
 
 const CATEGORIES = [
   { key: 'Food', label: 'Еда', icon: '🍔', color: '#f59e0b' },
@@ -60,13 +75,12 @@ function parseMoney(val: string): number {
 
 function getCategoryKey(raw?: string | number): string {
   if (raw === undefined || raw === null) return 'Other';
-  const str = String(raw).toLowerCase();
-  if (str === 'cafe' || str === 'кафе') return 'Food';
-  if (typeof raw === 'number' || !Number.isNaN(Number(raw))) {
+  if (typeof raw === 'number' || (!Number.isNaN(Number(raw)) && /^\d+$/.test(String(raw).trim()))) {
     const idx = Number(raw);
-    if (idx === 8) return 'Food'; // legacy Cafe enum index
-    return CATEGORIES[idx]?.key || 'Other';
+    return BACKEND_CATEGORY_MAP[idx] || 'Other';
   }
+  const str = String(raw).trim().toLowerCase();
+  if (str === 'cafe' || str === 'кафе') return 'Food';
   const found = CATEGORIES.find(
     (c) =>
       c.key.toLowerCase() === str ||
@@ -116,16 +130,28 @@ function resolveTelegramIdentity(): { initData: string; userId: string; username
   let userId: string = tg?.initDataUnsafe?.user?.id ? String(tg.initDataUnsafe.user.id) : '';
   let username: string = tg?.initDataUnsafe?.user?.first_name || tg?.initDataUnsafe?.user?.username || '';
 
-  if (!initData && window.location.hash.includes('tgWebAppData=')) {
-    const hashParams = new URLSearchParams(window.location.hash.slice(1));
-    initData = hashParams.get('tgWebAppData') || '';
+  if (!initData) {
+    if (window.location.hash.includes('tgWebAppData=')) {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      initData = hashParams.get('tgWebAppData') || '';
+    } else if (window.location.search.includes('tgWebAppData=')) {
+      const searchParams = new URLSearchParams(window.location.search);
+      initData = searchParams.get('tgWebAppData') || '';
+    }
   }
 
   if (!userId && initData) {
     try {
-      const params = new URLSearchParams(initData);
-      const userJson = params.get('user');
+      let raw = initData;
+      if (raw.includes('%')) {
+        try { raw = decodeURIComponent(raw); } catch {}
+      }
+      const params = new URLSearchParams(raw);
+      let userJson = params.get('user');
       if (userJson) {
+        if (userJson.includes('%')) {
+          try { userJson = decodeURIComponent(userJson); } catch {}
+        }
         const parsed = JSON.parse(userJson);
         if (parsed?.id) userId = String(parsed.id);
         if (parsed?.first_name) username = parsed.first_name;
@@ -133,6 +159,30 @@ function resolveTelegramIdentity(): { initData: string; userId: string; username
     } catch {
       // ignore
     }
+  }
+
+  if (!userId) {
+    try {
+      const search = new URLSearchParams(window.location.search);
+      const qId = search.get('userId') || search.get('user_id');
+      if (qId) userId = qId;
+    } catch {}
+  }
+
+  // Persist real Telegram ID so reloads and subsequent visits keep the exact same account
+  if (userId) {
+    try {
+      localStorage.setItem('pulqatta_telegram_uid', userId);
+      if (username) localStorage.setItem('pulqatta_telegram_uname', username);
+    } catch {}
+  } else {
+    try {
+      const cachedUid = localStorage.getItem('pulqatta_telegram_uid');
+      if (cachedUid) {
+        userId = cachedUid;
+        username = localStorage.getItem('pulqatta_telegram_uname') || 'Пользователь';
+      }
+    } catch {}
   }
 
   if (!userId) {
@@ -472,11 +522,11 @@ export default function Home() {
   const [undoItem, setUndoItem] = useState<Expense | null>(null);
   const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const identityRef = useRef<{ initData: string; userId: string; username: string }>({
-    initData: '',
-    userId: '111111111',
-    username: 'Тест',
-  });
+  const identityRef = useRef<{ initData: string; userId: string; username: string }>(
+    typeof window !== 'undefined'
+      ? resolveTelegramIdentity()
+      : { initData: '', userId: '111111111', username: 'Тест' }
+  );
 
   const stripRef = useRef<HTMLDivElement | null>(null);
   const amountInputRef = useRef<HTMLInputElement | null>(null);
@@ -497,16 +547,26 @@ export default function Home() {
     setSelectedDate(today);
 
     const savedApi = localStorage.getItem('pulqatta_custom_api');
-    if (savedApi) {
-      setApiUrl(savedApi);
+    if (savedApi && savedApi.trim().startsWith('http')) {
+      setApiUrl(savedApi.trim());
+    } else {
+      setApiUrl(DEFAULT_API_URL);
     }
   }, []);
 
   const getHeaders = useCallback(() => {
     const { initData, userId } = identityRef.current;
+    let safeInitData = 'mini_app_active';
+    if (initData) {
+      try {
+        safeInitData = encodeURIComponent(initData);
+      } catch {
+        safeInitData = 'mini_app_active';
+      }
+    }
     return {
       'Content-Type': 'application/json',
-      'X-Telegram-Init-Data': initData || 'mini_app_active',
+      'X-Telegram-Init-Data': safeInitData,
       'X-Telegram-User-Id': userId,
     };
   }, []);
@@ -560,15 +620,13 @@ export default function Home() {
           fetch(`${apiUrl}/api/expenses/month`, { headers }),
         ]);
 
-        if (dayRes.ok && monthRes.ok) {
+        let daySuccess = false;
+        if (dayRes.ok) {
           const dayData = await dayRes.json();
-          const monthData = await monthRes.json();
-
           setDayTotal(dayData.total || 0);
           setExpenses(dayData.expenses || []);
-          setMonthSummary(Array.isArray(monthData) ? monthData : []);
+          daySuccess = true;
 
-          // Sync into local backup
           const currentLocal = getLocalExpenses(userId);
           const otherExpenses = currentLocal.filter((e) => {
             const itemDate = e.createdAt ? e.createdAt.slice(0, 10) : '';
@@ -576,11 +634,19 @@ export default function Home() {
           });
           const merged = [...(dayData.expenses || []), ...otherExpenses];
           saveLocalExpenses(userId, merged);
+        }
+
+        if (monthRes.ok) {
+          const monthData = await monthRes.json();
+          setMonthSummary(Array.isArray(monthData) ? monthData : []);
+        }
+
+        if (daySuccess) {
           setIsRefreshing(false);
           return;
         }
-      } catch {
-        // Fallback
+      } catch (err) {
+        console.warn('Backend sync failed, falling back to local cache:', err);
       }
 
       applyLocalData(targetDate);
