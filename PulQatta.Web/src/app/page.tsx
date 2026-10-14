@@ -19,7 +19,7 @@ import {
 const USD_RATE = 12800;
 const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-export const CATEGORIES = [
+const CATEGORIES = [
   { key: 'Food', label: 'Еда', icon: '🍔', color: '#f59e0b' },
   { key: 'Transport', label: 'Транспорт', icon: '🚕', color: '#3b82f6' },
   { key: 'Credit', label: 'Кредит', icon: '💳', color: '#1c1917' },
@@ -33,9 +33,9 @@ export const CATEGORIES = [
   { key: 'Other', label: 'Прочее', icon: '📦', color: '#a8a29e' },
 ] as const;
 
-export type CategoryKey = (typeof CATEGORIES)[number]['key'];
+type CategoryKey = (typeof CATEGORIES)[number]['key'];
 
-export type Expense = {
+type Expense = {
   id: number;
   amount: number;
   category?: string | number;
@@ -43,7 +43,7 @@ export type Expense = {
   createdAt?: string;
 };
 
-export type CategorySummary = {
+type CategorySummary = {
   category: string | number;
   totalAmount: number;
 };
