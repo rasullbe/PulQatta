@@ -169,6 +169,26 @@ function saveLocalExpenses(userId: string, list: Expense[]) {
   }
 }
 
+function triggerHaptic(
+  type: 'impact' | 'selection' | 'notification' = 'selection',
+  style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft' | 'error' | 'success' | 'warning' = 'light'
+) {
+  if (typeof window === 'undefined') return;
+  try {
+    const haptic = (window as unknown as { Telegram?: { WebApp?: { HapticFeedback?: {
+      selectionChanged?: () => void;
+      impactOccurred?: (style: string) => void;
+      notificationOccurred?: (type: string) => void;
+    } } } }).Telegram?.WebApp?.HapticFeedback;
+    if (!haptic) return;
+    if (type === 'selection') haptic.selectionChanged?.();
+    else if (type === 'impact') haptic.impactOccurred?.(style);
+    else if (type === 'notification') haptic.notificationOccurred?.(style);
+  } catch {
+    // ignore
+  }
+}
+
 // Swipeable transaction row with hardware-accelerated gesture
 function SwipeableExpenseRow({
   expense,
@@ -183,8 +203,10 @@ function SwipeableExpenseRow({
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const startXRef = useRef<number | null>(null);
+  const startYRef = useRef<number | null>(null);
   const currentXRef = useRef(0);
   const isDraggingRef = useRef(false);
+  const isHorizontalSwipeRef = useRef(false);
   const [activeMode, setActiveMode] = useState<'none' | 'edit' | 'delete'>('none');
 
   const catObj = getCategoryObj(expense.category);
@@ -193,20 +215,40 @@ function SwipeableExpenseRow({
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     startXRef.current = e.clientX;
+    startYRef.current = e.clientY;
     currentXRef.current = 0;
     isDraggingRef.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-
-    if (rowRef.current) {
-      rowRef.current.style.transition = 'none';
-    }
+    isHorizontalSwipeRef.current = false;
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDraggingRef.current || startXRef.current === null || !rowRef.current) return;
-    const delta = e.clientX - startXRef.current;
+    if (!isDraggingRef.current || startXRef.current === null || startYRef.current === null || !rowRef.current) return;
+    const deltaX = e.clientX - startXRef.current;
+    const deltaY = e.clientY - startYRef.current;
 
-    let clamped = delta;
+    if (!isHorizontalSwipeRef.current) {
+      if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 6) {
+        isDraggingRef.current = false;
+        startXRef.current = null;
+        startYRef.current = null;
+        return;
+      }
+      if (Math.abs(deltaX) > 8) {
+        isHorizontalSwipeRef.current = true;
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
+        if (rowRef.current) {
+          rowRef.current.style.transition = 'none';
+        }
+      } else {
+        return;
+      }
+    }
+
+    let clamped = deltaX;
     if (clamped > 80) clamped = 80 + (clamped - 80) * 0.2;
     if (clamped < -80) clamped = -80 + (clamped + 80) * 0.2;
 
@@ -214,9 +256,15 @@ function SwipeableExpenseRow({
     rowRef.current.style.transform = `translate3d(${clamped}px, 0, 0)`;
 
     if (clamped <= -50) {
-      if (activeMode !== 'delete') setActiveMode('delete');
+      if (activeMode !== 'delete') {
+        setActiveMode('delete');
+        triggerHaptic('impact', 'light');
+      }
     } else if (clamped >= 50) {
-      if (activeMode !== 'edit') setActiveMode('edit');
+      if (activeMode !== 'edit') {
+        setActiveMode('edit');
+        triggerHaptic('impact', 'light');
+      }
     } else if (activeMode !== 'none') {
       setActiveMode('none');
     }
@@ -226,6 +274,7 @@ function SwipeableExpenseRow({
     if (!isDraggingRef.current || !rowRef.current) return;
     isDraggingRef.current = false;
     startXRef.current = null;
+    startYRef.current = null;
     const finalX = currentXRef.current;
 
     rowRef.current.style.transition = 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)';
@@ -233,15 +282,16 @@ function SwipeableExpenseRow({
     setActiveMode('none');
 
     if (finalX <= -65) {
+      triggerHaptic('notification', 'warning');
       onDelete(expense);
     } else if (finalX >= 65) {
+      triggerHaptic('selection');
       onEdit(expense);
     }
   };
 
   return (
     <motion.div
-      layout
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, height: 0, scale: 0.95, transition: { duration: 0.16 } }}
@@ -304,11 +354,11 @@ function DonutChart({
   onSelectKey: (key: string) => void;
 }) {
   const total = items.reduce((acc, it) => acc + it.amount, 0);
-  const size = 220;
-  const strokeWidth = 32;
-  const radius = 76;
+  const size = 190;
+  const strokeWidth = 24;
+  const radius = 68;
   const center = size / 2;
-  const circumference = 2 * Math.PI * radius; // ~477.52
+  const circumference = 2 * Math.PI * radius;
 
   const activeItem =
     items.find((it) => it.key === selectedKey) ||
@@ -330,68 +380,66 @@ function DonutChart({
         className="donut-svg"
         shapeRendering="geometricPrecision"
       >
-        {total === 0 ? (
-          <circle
-            cx={center}
-            cy={center}
-            r={radius}
-            fill="transparent"
-            stroke="rgba(24, 24, 27, 0.08)"
-            strokeWidth={strokeWidth}
-          />
-        ) : (
-          items.map((item) => {
-            const fraction = item.amount / total;
-            const sliceLength = fraction * circumference;
-            const gap = items.length > 1 ? 3 : 0;
-            const dash = Math.max(1, sliceLength - gap);
-            const dashArray = `${dash} ${circumference - dash}`;
-            const dashOffset = -accumulatedLength;
-            accumulatedLength += sliceLength;
+        <g transform={`rotate(-90 ${center} ${center})`}>
+          {total === 0 ? (
+            <circle
+              cx={center}
+              cy={center}
+              r={radius}
+              fill="transparent"
+              stroke="rgba(24, 24, 27, 0.08)"
+              strokeWidth={strokeWidth}
+            />
+          ) : (
+            items.map((item) => {
+              const fraction = item.amount / total;
+              const sliceLength = fraction * circumference;
+              const gap = items.length > 1 ? 3 : 0;
+              const dash = Math.max(1, sliceLength - gap);
+              const dashArray = `${dash} ${circumference - dash}`;
+              const dashOffset = -accumulatedLength;
+              accumulatedLength += sliceLength;
 
-            const isSelected = selectedKey === item.key;
+              const isSelected = selectedKey === item.key;
 
-            return (
-              <circle
-                key={item.key}
-                cx={center}
-                cy={center}
-                r={radius}
-                fill="transparent"
-                stroke={item.color}
-                strokeWidth={isSelected ? strokeWidth + 6 : strokeWidth}
-                strokeDasharray={dashArray}
-                strokeDashoffset={dashOffset}
-                transform={`rotate(-90 ${center} ${center})`}
-                className={`donut-slice ${isSelected ? 'active' : ''}`}
-                style={{
-                  cursor: 'pointer',
-                  transition: 'stroke-width 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease',
-                  opacity: selectedKey && !isSelected ? 0.45 : 1,
-                }}
-                onClick={() => onSelectKey(item.key)}
-              />
-            );
-          })
-        )}
+              return (
+                <circle
+                  key={item.key}
+                  cx={center}
+                  cy={center}
+                  r={radius}
+                  fill="transparent"
+                  stroke={item.color}
+                  strokeWidth={isSelected ? strokeWidth + 4 : strokeWidth}
+                  strokeDasharray={dashArray}
+                  strokeDashoffset={dashOffset}
+                  className={`donut-slice ${isSelected ? 'active' : ''}`}
+                  style={{
+                    opacity: selectedKey && !isSelected ? 0.45 : 1,
+                  }}
+                  onClick={() => onSelectKey(item.key)}
+                />
+              );
+            })
+          )}
+        </g>
       </svg>
 
       {/* Center hole overlay displaying percentage and category */}
       <div className="donut-center-info">
-        <motion.div
-          key={activeItem.key + (activeItem.pct || 0)}
-          initial={{ opacity: 0, scale: 0.88 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.18 }}
-          className="donut-center-content"
-        >
+        <div className="donut-center-content">
           <span className="donut-center-pct numbers" style={{ color: activeItem.color }}>
             {activeItem.pct}%
           </span>
           <span className="donut-center-label">
             {activeItem.label}
           </span>
-        </motion.div>
+          {activeItem.amount > 0 && (
+            <span className="donut-center-sub numbers">
+              {formatMoney(activeItem.amount)} UZS
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -613,8 +661,7 @@ export default function Home() {
         setEditingId(null);
         await loadData(selectedDate);
         setIsSubmitting(false);
-        // @ts-ignore
-        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+        triggerHaptic('notification', 'success');
         return;
       }
     } catch {
@@ -675,8 +722,7 @@ export default function Home() {
       }).catch(() => {});
     }, 4500);
 
-    // @ts-ignore
-    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('warning');
+    triggerHaptic('notification', 'warning');
   };
 
   const handleRestoreUndo = () => {
@@ -693,8 +739,7 @@ export default function Home() {
     const current = getLocalExpenses(userId);
     saveLocalExpenses(userId, [item, ...current]);
 
-    // @ts-ignore
-    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+    triggerHaptic('notification', 'success');
   };
 
   // Month Statistics Calculations
@@ -749,17 +794,9 @@ export default function Home() {
             </div>
           </header>
 
-          {/* PAGE VIEW SWITCHER WITH SMOOTH SPRING TRANSITION */}
-          <AnimatePresence mode="wait">
-            {activePage === 'home' ? (
-              <motion.div
-                key="home-page"
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -12 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                className="page-tab-content"
-              >
+          {/* TAB VIEWS CONTAINER (Preserves DOM & scroll position, zero mobile stutter) */}
+          <div className="tab-views-container">
+            <div className={`page-tab-content ${activePage === 'home' ? 'active-tab' : 'hidden-tab'}`}>
                 {/* Day Summary Balance Card */}
                 <section className="summary-card">
                   <div className="summary-top">
@@ -910,13 +947,18 @@ export default function Home() {
                 {/* Day Expenses History */}
                 <section className="history-box">
                   <div className="history-header">
-                    <div className="history-title">
-                      {isToday
-                        ? 'Траты за сегодня'
-                        : `Траты (${formatDateDisplay(selectedDate, todayDate)})`}
+                    <div className="history-title-wrap">
+                      <span className="history-title">
+                        {isToday
+                          ? 'Траты за сегодня'
+                          : `Траты (${formatDateDisplay(selectedDate, todayDate)})`}
+                      </span>
+                      {expenses.length > 0 && (
+                        <span className="history-count-badge numbers">{expenses.length}</span>
+                      )}
                     </div>
                     {expenses.length > 0 && (
-                      <span className="swipe-hint">← свайп для действий →</span>
+                      <span className="swipe-hint">← свайп →</span>
                     )}
                   </div>
 
@@ -941,16 +983,9 @@ export default function Home() {
                     )}
                   </div>
                 </section>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="stats-page"
-                initial={{ opacity: 0, x: 12 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 12 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                className="page-tab-content stats-page-wrap"
-              >
+            </div>
+
+            <div className={`page-tab-content stats-page-wrap ${activePage === 'stats' ? 'active-tab' : 'hidden-tab'}`}>
                 {/* Statistics Hero matching image */}
                 <section className="stats-hero-card">
                   <span className="stats-hero-label">Всего за этот месяц</span>
@@ -968,8 +1003,7 @@ export default function Home() {
                   selectedKey={selectedStatKey}
                   onSelectKey={(key) => {
                     setSelectedStatKey((prev) => (prev === key ? null : key));
-                    // @ts-ignore
-                    window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+                    triggerHaptic('selection');
                   }}
                 />
 
@@ -992,8 +1026,7 @@ export default function Home() {
                             className={`stat-item-row ${isSelected ? 'active' : ''}`}
                             onClick={() => {
                               setSelectedStatKey((prev) => (prev === item.key ? null : item.key));
-                              // @ts-ignore
-                              window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+                              triggerHaptic('selection');
                             }}
                           >
                             <div className="stat-item-main">
@@ -1038,9 +1071,8 @@ export default function Home() {
                     )}
                   </div>
                 </section>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            </div>
+          </div>
         </main>
 
         {/* Undo Toast Notification */}
@@ -1071,8 +1103,7 @@ export default function Home() {
               className={`nav-tab-btn ${activePage === 'home' ? 'active' : ''}`}
               onClick={() => {
                 setActivePage('home');
-                // @ts-ignore
-                window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+                triggerHaptic('selection');
               }}
             >
               <Wallet size={16} />
@@ -1091,8 +1122,7 @@ export default function Home() {
               className={`nav-tab-btn ${activePage === 'stats' ? 'active' : ''}`}
               onClick={() => {
                 setActivePage('stats');
-                // @ts-ignore
-                window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+                triggerHaptic('selection');
               }}
             >
               <PieChart size={16} />
