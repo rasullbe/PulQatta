@@ -1,7 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using PulQatta.Api.Data;
-using PulQatta.Api.Entities;
 using PulQatta.Api.DTOs;
+using PulQatta.Api.Entities;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace PulQatta.Api.Services;
 
@@ -198,5 +199,23 @@ public class ExpenseService : IExpenseService
             Note = expense.Note,
             CreatedAt = expense.CreatedAt
         };
+    }
+
+    public async Task<List<ExpenseGetDto>> GetExpenseMoreAsync(long telegramId, decimal minAmount)
+    {
+        return await _context.Expenses
+            .Include(e => e.User)
+            .Where(e => e.User!.TelegramId == telegramId && e.Amount >= minAmount)
+            .OrderByDescending(e => e.CreatedAt)
+            .Take(100)
+            .Select(e => new ExpenseGetDto
+            {
+                Id = e.Id,
+                Category = e.Category == Category.Cafe ? Category.Food : e.Category,
+                Amount = e.Amount,
+                Note = e.Note,
+                CreatedAt = e.CreatedAt
+            })
+            .ToListAsync();
     }
 }

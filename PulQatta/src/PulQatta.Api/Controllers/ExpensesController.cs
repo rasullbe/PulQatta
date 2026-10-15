@@ -129,6 +129,16 @@ public class ExpensesController : ControllerBase
         await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ExecuteDeleteAsync(db.Expenses);
         return NoContent();
     }
+
+    [HttpGet("more")]
+    public async Task<IActionResult> GetExpensesMore([FromQuery] decimal minAmount)
+    {
+        if (!TryGetTelegramId(out var telegramId)) return Unauthorized();
+
+        var expenses = await _expenseService.GetExpenseMoreAsync(telegramId, minAmount);
+        return Ok(expenses);
+    }
+
 }
 
 

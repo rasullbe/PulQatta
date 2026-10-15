@@ -14,6 +14,9 @@ import {
   RefreshCw,
   Wallet,
   PieChart,
+  Search,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react';
 
 const USD_RATE = 12800;
@@ -245,11 +248,13 @@ function SwipeableExpenseRow({
   isBeingEdited,
   onEdit,
   onDelete,
+  showDate,
 }: {
   expense: Expense;
   isBeingEdited: boolean;
   onEdit: (expense: Expense) => void;
   onDelete: (expense: Expense) => void;
+  showDate?: boolean;
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const startXRef = useRef<number | null>(null);
@@ -261,6 +266,8 @@ function SwipeableExpenseRow({
 
   const catObj = getCategoryObj(expense.category);
   const hasNote = Boolean(expense.note && expense.note.trim());
+  const dateFormatted = showDate && expense.createdAt ? formatDateDisplay(expense.createdAt.slice(0, 10)) : '';
+  const subText = [hasNote ? catObj.label : null, dateFormatted].filter(Boolean).join(' • ');
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
@@ -372,7 +379,7 @@ function SwipeableExpenseRow({
           </span>
           <div className="history-text">
             <span className="history-name">{hasNote ? expense.note : catObj.label}</span>
-            {hasNote && <span className="history-sub">{catObj.label}</span>}
+            {subText ? <span className="history-sub">{subText}</span> : null}
           </div>
         </div>
         <div className="history-right">
@@ -514,6 +521,13 @@ export default function Home() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Filter by minAmount (user-entered minimum threshold)
+  const [minAmountFilter, setMinAmountFilter] = useState('');
+  const [isFilterActive, setIsFilterActive] = useState(false);
+  const [showMinFilter, setShowMinFilter] = useState(false);
+  const [filteredExpenses, setFilteredExpenses] = useState<Expense[]>([]);
+  const [isLoadingFiltered, setIsLoadingFiltered] = useState(false);
 
   // API state
   const [apiUrl, setApiUrl] = useState<string>(DEFAULT_API_URL);
@@ -771,6 +785,9 @@ export default function Home() {
 
     // Immediately remove from UI
     setExpenses((prev) => prev.filter((item) => item.id !== target.id));
+    if (isFilterActive) {
+      setFilteredExpenses((prev) => prev.filter((item) => item.id !== target.id));
+    }
     setDayTotal((prev) => Math.max(0, prev - target.amount));
 
     // Save to local backup
@@ -799,6 +816,9 @@ export default function Home() {
     setUndoItem(null);
 
     setExpenses((prev) => [item, ...prev]);
+    if (isFilterActive && item.amount >= parseMoney(minAmountFilter)) {
+      setFilteredExpenses((prev) => [item, ...prev]);
+    }
     setDayTotal((prev) => prev + item.amount);
 
     const { userId } = identityRef.current;
@@ -806,6 +826,44 @@ export default function Home() {
     saveLocalExpenses(userId, [item, ...current]);
 
     triggerHaptic('notification', 'success');
+  };
+
+  const handleSearchMore = async () => {
+    const amount = parseMoney(minAmountFilter);
+    if (!amount) return;
+    setIsLoadingFiltered(true);
+    setIsFilterActive(true);
+    triggerHaptic('impact', 'light');
+
+    try {
+      const res = await fetch(`${apiUrl}/api/expenses/more?minAmount=${amount}`, {
+        headers: getHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFilteredExpenses(Array.isArray(data) ? data : []);
+        setIsLoadingFiltered(false);
+        return;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch filtered expenses, using local fallback:', e);
+    }
+
+    // Local fallback
+    const { userId } = identityRef.current;
+    const all = getLocalExpenses(userId);
+    const matched = all
+      .filter((item) => Number(item.amount || 0) >= amount)
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    setFilteredExpenses(matched);
+    setIsLoadingFiltered(false);
+  };
+
+  const handleClearFilter = () => {
+    setIsFilterActive(false);
+    setMinAmountFilter('');
+    setFilteredExpenses([]);
+    triggerHaptic('selection');
   };
 
   // Month Statistics Calculations
@@ -1015,36 +1073,120 @@ export default function Home() {
                   <div className="history-header">
                     <div className="history-title-wrap">
                       <span className="history-title">
-                        {isToday
+                        {isFilterActive
+                          ? `Траты от ${formatMoney(parseMoney(minAmountFilter))} UZS`
+                          : isToday
                           ? 'Траты за сегодня'
                           : `Траты (${formatDateDisplay(selectedDate, todayDate)})`}
                       </span>
-                      {expenses.length > 0 && (
-                        <span className="history-count-badge numbers">{expenses.length}</span>
-                      )}
+                      <span className="history-count-badge numbers">
+                        {isFilterActive ? filteredExpenses.length : expenses.length}
+                      </span>
                     </div>
-                    {expenses.length > 0 && (
-                      <span className="swipe-hint">← свайп →</span>
-                    )}
+
+                    <div className="history-header-actions">
+                      <button
+                        type="button"
+                        className={`filter-toggle-pill ${showMinFilter || isFilterActive ? 'active' : ''}`}
+                        onClick={() => {
+                          setShowMinFilter((prev) => !prev);
+                          triggerHaptic('selection');
+                        }}
+                        aria-label="Фильтр по сумме"
+                      >
+                        <SlidersHorizontal size={12} />
+                        <span>{isFilterActive ? `≥ ${formatMoney(parseMoney(minAmountFilter))}` : 'По сумме'}</span>
+                      </button>
+                    </div>
                   </div>
 
+                  {/* Filter input container */}
+                  {(showMinFilter || isFilterActive) && (
+                    <div className="filter-amount-bar">
+                      <div className="filter-input-wrap">
+                        <Search size={14} className="filter-search-icon" />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={minAmountFilter}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, '');
+                            if (!raw) {
+                              setMinAmountFilter('');
+                            } else {
+                              setMinAmountFilter(Number(raw).toLocaleString('ru-RU'));
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSearchMore();
+                            }
+                          }}
+                          placeholder="Сумма от (например, 50 000)..."
+                          className="filter-amount-input numbers"
+                        />
+                        {minAmountFilter && (
+                          <button
+                            type="button"
+                            className="filter-clear-icon-btn"
+                            onClick={() => setMinAmountFilter('')}
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="filter-submit-btn"
+                        onClick={handleSearchMore}
+                        disabled={!parseMoney(minAmountFilter) || isLoadingFiltered}
+                      >
+                        {isLoadingFiltered ? <RefreshCw size={13} className="rotating" /> : 'Найти'}
+                      </button>
+                      {isFilterActive && (
+                        <button
+                          type="button"
+                          className="filter-reset-btn"
+                          onClick={handleClearFilter}
+                        >
+                          Сбросить
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   <div className="history-list">
-                    {expenses.length > 0 ? (
+                    {(isFilterActive ? filteredExpenses : expenses).length > 0 ? (
                       <AnimatePresence initial={false}>
-                        {expenses.map((expense) => (
+                        {(isFilterActive ? filteredExpenses : expenses).map((expense) => (
                           <SwipeableExpenseRow
                             key={expense.id}
                             expense={expense}
                             isBeingEdited={editingId === expense.id}
                             onEdit={handleStartEdit}
                             onDelete={handleDeleteExpense}
+                            showDate={isFilterActive}
                           />
                         ))}
                       </AnimatePresence>
                     ) : (
                       <div className="empty-state">
-                        <span className="empty-icon">☕</span>
-                        <span>Нет трат за этот день</span>
+                        <span className="empty-icon">{isFilterActive ? '🔍' : '☕'}</span>
+                        <span>
+                          {isFilterActive
+                            ? `Нет трат от ${formatMoney(parseMoney(minAmountFilter))} UZS`
+                            : 'Нет трат за этот день'}
+                        </span>
+                        {isFilterActive && (
+                          <button
+                            type="button"
+                            className="empty-reset-filter-btn"
+                            onClick={handleClearFilter}
+                          >
+                            Показать все траты
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

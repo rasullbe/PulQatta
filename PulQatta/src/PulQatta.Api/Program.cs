@@ -7,9 +7,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile("appsettings.Secrets.json", optional: true, reloadOnChange: true);
 
-// Configure dynamic port (Render sets PORT, default is 10000)
-var port = Environment.GetEnvironmentVariable("PORT") ?? builder.Configuration["PORT"] ?? "10000";
-builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+// Configure dynamic port for Render / Cloud deployment (Render sets the PORT env variable)
+var renderPort = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(renderPort))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{renderPort}");
+}
 
 // Add services to the container.
 builder.Services.AddControllers()
@@ -77,10 +80,15 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure HTTP pipeline
+app.UseSwagger();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "PulQatta API v1");
+});
+
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.MapGet("/", () => Results.Redirect("/swagger"));
 }
 
 // Health check endpoint (200 OK without database query)
