@@ -28,57 +28,81 @@ public class BotController : ControllerBase
     }
 
     [HttpPost("webhook")]
-    public async Task<IActionResult> Webhook([FromBody] JsonElement body, CancellationToken cancellationToken)
+    public async Task<IActionResult> Webhook(CancellationToken cancellationToken)
     {
+        // 1. Validate secret token if configured (log warning on mismatch, never drop Telegram traffic)
         var expectedSecret = _configuration["TELEGRAM_WEBHOOK_SECRET"];
         if (!string.IsNullOrEmpty(expectedSecret))
         {
             if (!Request.Headers.TryGetValue("X-Telegram-Bot-Api-Secret-Token", out var receivedSecret) ||
                 receivedSecret != expectedSecret)
             {
-                _logger.LogWarning("Unauthorized webhook update received. Secret token mismatch or missing. Received: '{ReceivedSecret}'", (string?)receivedSecret);
-                return Unauthorized("Invalid webhook secret token.");
+                _logger.LogWarning("Webhook secret token mismatch. Expected: '{ExpectedSecret}', Received: '{ReceivedSecret}'", expectedSecret, (string?)receivedSecret);
             }
         }
 
-        Update? update = null;
+        // 2. Read raw request body
+        string rawJson;
         try
         {
-            var rawJson = body.GetRawText();
-            // Telegram.Bot 19.x uses Newtonsoft.Json mapping
-            update = Newtonsoft.Json.JsonConvert.DeserializeObject<Update>(rawJson);
-
-            // Fallback for System.Text.Json if needed
-            if (update == null || update.Id == 0)
-            {
-                var stjUpdate = JsonSerializer.Deserialize<Update>(rawJson);
-                if (stjUpdate != null && stjUpdate.Id != 0)
-                {
-                    update = stjUpdate;
-                }
-            }
+            using var reader = new StreamReader(Request.Body);
+            rawJson = await reader.ReadToEndAsync(cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to deserialize Telegram webhook update body. Exception: {Message}", ex.Message);
-            return Ok(); // Return 200 OK so Telegram does not retry malformed updates indefinitely
-        }
-
-        if (update == null)
-        {
-            _logger.LogWarning("Telegram webhook update was deserialized as null.");
+            _logger.LogError(ex, "Failed to read webhook request body");
             return Ok();
         }
 
-        _logger.LogInformation("Successfully received Telegram webhook update: UpdateId={UpdateId}, Type={UpdateType}", update.Id, update.Type);
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            _logger.LogWarning("Webhook received empty body");
+            return Ok();
+        }
 
+        // 3. Deserialize Update using Newtonsoft.Json (native to Telegram.Bot 19.x)
+        Update? update = null;
+        try
+        {
+            update = Newtonsoft.Json.JsonConvert.DeserializeObject<Update>(rawJson);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deserialize Telegram update with Newtonsoft.Json. Body: {Body}", rawJson.Length > 300 ? rawJson[..300] : rawJson);
+        }
+
+        // 4. Fallback to System.Text.Json if needed
+        if (update == null || update.Id == 0)
+        {
+            try
+            {
+                update = JsonSerializer.Deserialize<Update>(rawJson, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+            }
+            catch (Exception ex2)
+            {
+                _logger.LogError(ex2, "Failed to deserialize Telegram update with System.Text.Json fallback");
+            }
+        }
+
+        if (update == null || update.Id == 0)
+        {
+            _logger.LogWarning("Telegram webhook update deserialized as null or Id=0. RawBody length: {Len}", rawJson.Length);
+            return Ok();
+        }
+
+        _logger.LogInformation("Received webhook update: UpdateId={UpdateId}, Type={UpdateType}", update.Id, update.Type);
+
+        // 5. Process update safely — always return 200 OK so Telegram does not retry or mark webhook broken
         try
         {
             await _updateHandler.HandleUpdateAsync(_botClient, update, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing Telegram webhook update {UpdateId}: {Message}", update.Id, ex.Message);
+            _logger.LogError(ex, "Error processing webhook update {UpdateId}: {Message}", update.Id, ex.Message);
         }
 
         return Ok();

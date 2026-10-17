@@ -33,7 +33,7 @@ public class TelegramBotBackgroundService : BackgroundService
         _botClient = new TelegramBotClient(token);
 
         // Configure Mini App menu button if FRONTEND_ORIGIN is provided
-        var webAppUrl = _configuration["FRONTEND_ORIGIN"] ?? _configuration["WEBAPP_URL"];
+        var webAppUrl = _configuration["FRONTEND_ORIGIN"] ?? _configuration["WEBAPP_URL"] ?? "https://sparkly-flan-a1ad41.netlify.app";
         if (!string.IsNullOrWhiteSpace(webAppUrl))
         {
             try
@@ -68,7 +68,7 @@ public class TelegramBotBackgroundService : BackgroundService
                     url: webhookUrl,
                     secretToken: !string.IsNullOrWhiteSpace(secretToken) ? secretToken : null,
                     allowedUpdates: [UpdateType.Message, UpdateType.CallbackQuery],
-                    dropPendingUpdates: true,
+                    dropPendingUpdates: false,
                     cancellationToken: stoppingToken
                 );
                 _logger.LogInformation("Telegram webhook registered successfully.");

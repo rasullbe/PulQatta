@@ -19,7 +19,9 @@ public class TelegramCommandHandler : ITelegramCommandHandler
 
     public async Task HandleCommandAsync(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
     {
-        var text = message.Text!;
+        var text = message.Text?.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+
         var chatId = message.Chat.Id;
         var telegramId = message.From!.Id;
 
@@ -35,19 +37,27 @@ public class TelegramCommandHandler : ITelegramCommandHandler
 
     private async Task ProcessSlashCommandAsync(ITelegramBotClient botClient, Message message, long chatId, long telegramId, string text, CancellationToken cancellationToken)
     {
-        var webAppUrl = _configuration["FRONTEND_ORIGIN"] ?? _configuration["WEBAPP_URL"];
-        InlineKeyboardMarkup? webAppKeyboard = !string.IsNullOrWhiteSpace(webAppUrl)
-            ? new InlineKeyboardMarkup(new[]
+        var webAppUrl = _configuration["FRONTEND_ORIGIN"] ?? _configuration["WEBAPP_URL"] ?? "https://sparkly-flan-a1ad41.netlify.app";
+        InlineKeyboardMarkup? webAppKeyboard = null;
+        if (!string.IsNullOrWhiteSpace(webAppUrl) && Uri.TryCreate(webAppUrl, UriKind.Absolute, out var uriResult) && uriResult.Scheme == Uri.UriSchemeHttps)
+        {
+            webAppKeyboard = new InlineKeyboardMarkup(new[]
             {
                 InlineKeyboardButton.WithWebApp("📱 Открыть Mini App", new WebAppInfo { Url = webAppUrl }) 
-            })
-            : null;
+            });
+        }
 
-        switch (text.ToLower())
+        var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var command = parts[0].Split('@')[0].ToLower();
+
+        switch (command)
         {
             case "/start":
                 var firstName = message.From?.FirstName ?? "друг";
-                var welcomeText = $@"Привет, {firstName}! 👋
+                var cleanName = System.Text.RegularExpressions.Regex.Replace(firstName, @"[_*\[\]()~>#+=|{}.!\\-]", "");
+                if (string.IsNullOrWhiteSpace(cleanName)) cleanName = "друг";
+
+                var welcomeText = $@"Привет, {cleanName}! 👋
 Я — твой личный трекер расходов PulQatta.
 
 💡 *Как записать трату?*
@@ -58,9 +68,51 @@ public class TelegramCommandHandler : ITelegramCommandHandler
 📊 *Доступные команды:*
 /today — твои траты за сегодня
 /month — итоги за текущий месяц
+/more — крупные траты (например, `/more 50000`)
 /undo — отменить последнюю трату";
 
-                await botClient.SendTextMessageAsync(chatId, welcomeText, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                try
+                {
+                    await botClient.SendTextMessageAsync(chatId, welcomeText, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                }
+                catch
+                {
+                    await botClient.SendTextMessageAsync(chatId, welcomeText.Replace("*", "").Replace("`", ""), replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                }
+                break;
+
+            case "/more":
+                decimal minAmount = 50000;
+                if (parts.Length > 1 && decimal.TryParse(parts[1].Replace(" ", "").Replace(".", "").Replace(",", ""), out var parsedMin))
+                {
+                    minAmount = parsedMin;
+                }
+                var largeExpenses = await _expenseService.GetExpenseMoreAsync(telegramId, minAmount);
+                var minFmt = minAmount.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
+                if (largeExpenses.Count == 0)
+                {
+                    await botClient.SendTextMessageAsync(chatId, $"🔍 Нет трат от {minFmt} UZS.", replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    var moreResponse = $"🔍 *Крупные траты (от {minFmt} UZS)*\nНайдено: {largeExpenses.Count}\n\n";
+                    foreach (var exp in largeExpenses.Take(25))
+                    {
+                        var expUsd = exp.Amount / 12800m;
+                        var expFmt = exp.Amount.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
+                        var expUsdFmt = expUsd.ToString("N2", new System.Globalization.CultureInfo("en-US"));
+                        var dateStr = exp.CreatedAt.ToString("dd.MM");
+                        moreResponse += $"• {dateStr} — {expFmt} UZS (${expUsdFmt}) {GetCategoryName(exp.Category)}{(string.IsNullOrEmpty(exp.Note) ? "" : $" ({exp.Note})")}\n";
+                    }
+                    try
+                    {
+                        await botClient.SendTextMessageAsync(chatId, moreResponse, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                    }
+                    catch
+                    {
+                        await botClient.SendTextMessageAsync(chatId, moreResponse.Replace("*", ""), replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                    }
+                }
                 break;
 
             case "/today":
@@ -80,7 +132,14 @@ public class TelegramCommandHandler : ITelegramCommandHandler
                     response += $"- {expFmt} UZS (${expUsdFmt}) ({GetCategoryName(exp.Category)}) {exp.Note}\n";
                 }
                 
-                await botClient.SendTextMessageAsync(chatId, response, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                try
+                {
+                    await botClient.SendTextMessageAsync(chatId, response, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                }
+                catch
+                {
+                    await botClient.SendTextMessageAsync(chatId, response.Replace("*", ""), replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                }
                 break;
                 
             case "/month":
@@ -100,17 +159,24 @@ public class TelegramCommandHandler : ITelegramCommandHandler
                     monthResponse += $"- {GetCategoryName(cat.Category)}: {catFmt} UZS (${catUsdFmt})\n";
                 }
                 
-                await botClient.SendTextMessageAsync(chatId, monthResponse, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                try
+                {
+                    await botClient.SendTextMessageAsync(chatId, monthResponse, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                }
+                catch
+                {
+                    await botClient.SendTextMessageAsync(chatId, monthResponse.Replace("*", ""), replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
+                }
                 break;
                 
             case "/undo":
                 var success = await _expenseService.UndoLastExpenseAsync(telegramId);
                 var msg = success ? "✅ Последняя трата отменена." : "❌ Нет трат для отмены.";
-                await botClient.SendTextMessageAsync(chatId, msg, cancellationToken: cancellationToken);
+                await botClient.SendTextMessageAsync(chatId, msg, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
                 break;
                 
             default:
-                await botClient.SendTextMessageAsync(chatId, "Неизвестная команда. Попробуй /start, /today или /month.", cancellationToken: cancellationToken);
+                await botClient.SendTextMessageAsync(chatId, "Неизвестная команда. Попробуй /start, /today, /month или /more.", replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
                 break;
         }
     }
@@ -118,7 +184,7 @@ public class TelegramCommandHandler : ITelegramCommandHandler
     private async Task ProcessTextInputAsync(ITelegramBotClient botClient, long chatId, string text, CancellationToken cancellationToken)
     {
         var parts = text.Split(' ', 2);
-        if (decimal.TryParse(parts[0], out var amount))
+        if (decimal.TryParse(parts[0].Replace(" ", "").Replace(".", "").Replace(",", ""), out var amount))
         {
             var note = parts.Length > 1 ? parts[1] : null;
             await SendCategoryKeyboardAsync(botClient, chatId, amount, note, cancellationToken);
@@ -196,6 +262,3 @@ public class TelegramCommandHandler : ITelegramCommandHandler
         };
     }
 }
-
-
-

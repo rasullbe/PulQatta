@@ -31,17 +31,21 @@ public class TelegramUpdateHandler : ITelegramUpdateHandler
                 return;
             }
 
-            if (update.Type == UpdateType.Message && update.Message!.Type == MessageType.Text)
+            if (update.Type == UpdateType.Message && update.Message != null && update.Message.Type == MessageType.Text)
             {
                 await _commandHandler.HandleCommandAsync(botClient, update.Message, cancellationToken);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling update");
+            _logger.LogError(ex, "Error handling update {UpdateId}: {Message}", update.Id, ex.Message);
             if (update.Message != null)
             {
-                await botClient.SendTextMessageAsync(update.Message.Chat.Id, "Произошла ошибка при обработке команды.", cancellationToken: cancellationToken);
+                try
+                {
+                    await botClient.SendTextMessageAsync(update.Message.Chat.Id, "Произошла ошибка при обработке команды.", cancellationToken: cancellationToken);
+                }
+                catch { }
             }
         }
     }
