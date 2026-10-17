@@ -95,15 +95,17 @@ public class TelegramCommandHandler : ITelegramCommandHandler
                 }
                 else
                 {
-                    var moreResponse = $"🔍 *Крупные траты (от {minFmt} UZS)*\nНайдено: {largeExpenses.Count}\n\n";
+                    var sbMore = new System.Text.StringBuilder();
+                    sbMore.Append($"🔍 *Крупные траты (от {minFmt} UZS)*\nНайдено: {largeExpenses.Count}\n\n");
                     foreach (var exp in largeExpenses.Take(25))
                     {
                         var expUsd = exp.Amount / 12800m;
                         var expFmt = exp.Amount.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
                         var expUsdFmt = expUsd.ToString("N2", new System.Globalization.CultureInfo("en-US"));
                         var dateStr = exp.CreatedAt.ToString("dd.MM");
-                        moreResponse += $"• {dateStr} — {expFmt} UZS (${expUsdFmt}) {GetCategoryName(exp.Category)}{(string.IsNullOrEmpty(exp.Note) ? "" : $" ({exp.Note})")}\n";
+                        sbMore.Append($"• {dateStr} — {expFmt} UZS (${expUsdFmt}) {GetCategoryName(exp.Category)}{(string.IsNullOrEmpty(exp.Note) ? "" : $" ({exp.Note})")}\n");
                     }
+                    var moreResponse = sbMore.ToString();
                     try
                     {
                         await botClient.SendTextMessageAsync(chatId, moreResponse, parseMode: ParseMode.Markdown, replyMarkup: webAppKeyboard, cancellationToken: cancellationToken);
@@ -116,21 +118,25 @@ public class TelegramCommandHandler : ITelegramCommandHandler
                 break;
 
             case "/today":
-                var total = await _expenseService.GetTodayTotalAsync(telegramId);
                 var expenses = await _expenseService.GetTodayExpensesAsync(telegramId);
+                var total = expenses.Count < 50
+                    ? expenses.Sum(e => e.Amount)
+                    : await _expenseService.GetTodayTotalAsync(telegramId);
                 
                 var totalUsd = total / 12800m;
                 var totalFmt = total.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
                 var totalUsdFmt = totalUsd.ToString("N2", new System.Globalization.CultureInfo("en-US"));
                 
-                var response = $"📅 *Траты за сегодня*\nИтого: {totalFmt} UZS (${totalUsdFmt})\n\n";
+                var sbToday = new System.Text.StringBuilder();
+                sbToday.Append($"📅 *Траты за сегодня*\nИтого: {totalFmt} UZS (${totalUsdFmt})\n\n");
                 foreach (var exp in expenses)
                 {
                     var expUsd = exp.Amount / 12800m;
                     var expFmt = exp.Amount.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
                     var expUsdFmt = expUsd.ToString("N2", new System.Globalization.CultureInfo("en-US"));
-                    response += $"- {expFmt} UZS (${expUsdFmt}) ({GetCategoryName(exp.Category)}) {exp.Note}\n";
+                    sbToday.Append($"- {expFmt} UZS (${expUsdFmt}) ({GetCategoryName(exp.Category)}) {exp.Note}\n");
                 }
+                var response = sbToday.ToString();
                 
                 try
                 {
@@ -150,14 +156,16 @@ public class TelegramCommandHandler : ITelegramCommandHandler
                 var monthTotalFmt = monthTotal.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
                 var monthTotalUsdFmt = monthTotalUsd.ToString("N2", new System.Globalization.CultureInfo("en-US"));
 
-                var monthResponse = $"📊 *Итоги за месяц*\nВсего: {monthTotalFmt} UZS (${monthTotalUsdFmt})\n\n";
+                var sbMonth = new System.Text.StringBuilder();
+                sbMonth.Append($"📊 *Итоги за месяц*\nВсего: {monthTotalFmt} UZS (${monthTotalUsdFmt})\n\n");
                 foreach (var cat in summary)
                 {
                     var catUsd = cat.TotalAmount / 12800m;
                     var catFmt = cat.TotalAmount.ToString("N0", new System.Globalization.CultureInfo("de-DE"));
                     var catUsdFmt = catUsd.ToString("N2", new System.Globalization.CultureInfo("en-US"));
-                    monthResponse += $"- {GetCategoryName(cat.Category)}: {catFmt} UZS (${catUsdFmt})\n";
+                    sbMonth.Append($"- {GetCategoryName(cat.Category)}: {catFmt} UZS (${catUsdFmt})\n");
                 }
+                var monthResponse = sbMonth.ToString();
                 
                 try
                 {

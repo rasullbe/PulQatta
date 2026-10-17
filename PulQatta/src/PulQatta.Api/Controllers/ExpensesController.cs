@@ -126,7 +126,13 @@ public class ExpensesController : ControllerBase
     [HttpDelete("clear-all")]
     public async Task<IActionResult> ClearAll([FromServices] PulQatta.Api.Data.AppDbContext db)
     {
-        await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ExecuteDeleteAsync(db.Expenses);
+        if (!TryGetTelegramId(out var telegramId)) return Unauthorized();
+
+        var user = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.Users, u => u.TelegramId == telegramId);
+        if (user != null)
+        {
+            await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ExecuteDeleteAsync(db.Expenses.Where(e => e.UserId == user.Id));
+        }
         return NoContent();
     }
 

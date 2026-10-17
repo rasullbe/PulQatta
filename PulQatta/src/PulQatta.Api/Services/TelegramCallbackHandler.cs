@@ -29,10 +29,10 @@ public class TelegramCallbackHandler : ITelegramCallbackHandler
                 text: success ? "Трата отменена!" : "Нечего отменять.",
                 cancellationToken: cancellationToken);
 
-            if (success)
+            if (success && callbackQuery.Message != null)
             {
                 await botClient.EditMessageTextAsync(
-                    chatId: callbackQuery.Message!.Chat.Id,
+                    chatId: callbackQuery.Message.Chat.Id,
                     messageId: callbackQuery.Message.MessageId,
                     text: $"🗑 Трата была успешно отменена.",
                     cancellationToken: cancellationToken);
@@ -69,12 +69,15 @@ public class TelegramCallbackHandler : ITelegramCallbackHandler
                     InlineKeyboardButton.WithCallbackData("❌ Отменить", "undo_last")
                 });
 
-                await botClient.EditMessageTextAsync(
-                    chatId: callbackQuery.Message!.Chat.Id,
-                    messageId: callbackQuery.Message.MessageId,
-                    text: $"✅ Сохранено: {amountFmt} UZS (${usdFmt}) в категорию {TelegramCommandHandler.GetCategoryName(category)}{(string.IsNullOrEmpty(note) ? "" : $" ({note})")}",
-                    replyMarkup: undoKeyboard,
-                    cancellationToken: cancellationToken);
+                if (callbackQuery.Message != null)
+                {
+                    await botClient.EditMessageTextAsync(
+                        chatId: callbackQuery.Message.Chat.Id,
+                        messageId: callbackQuery.Message.MessageId,
+                        text: $"✅ Сохранено: {amountFmt} UZS (${usdFmt}) в категорию {TelegramCommandHandler.GetCategoryName(category)}{(string.IsNullOrEmpty(note) ? "" : $" ({note})")}",
+                        replyMarkup: undoKeyboard,
+                        cancellationToken: cancellationToken);
+                }
             }
         }
     }

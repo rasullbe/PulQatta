@@ -2,8 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using PulQatta.Api.Data;
 using PulQatta.Api.DTOs;
 using PulQatta.Api.Entities;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-
 namespace PulQatta.Api.Services;
 
 public class ExpenseService : IExpenseService
@@ -76,7 +74,7 @@ public class ExpenseService : IExpenseService
         var start = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
         var end = start.AddDays(1);
         return await _context.Expenses
-            .Include(e => e.User)
+            .AsNoTracking()
             .Where(e => e.User!.TelegramId == telegramId && e.CreatedAt >= start && e.CreatedAt < end)
             .SumAsync(e => e.Amount);
     }
@@ -86,7 +84,7 @@ public class ExpenseService : IExpenseService
         var start = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
         var end = start.AddDays(1);
         return await _context.Expenses
-            .Include(e => e.User)
+            .AsNoTracking()
             .Where(e => e.User!.TelegramId == telegramId && e.CreatedAt >= start && e.CreatedAt < end)
             .OrderByDescending(e => e.CreatedAt)
             .Take(100)
@@ -106,7 +104,7 @@ public class ExpenseService : IExpenseService
     {
         var today = DateTime.UtcNow.Date;
         return await _context.Expenses
-            .Include(e => e.User)
+            .AsNoTracking()
             .Where(e => e.User!.TelegramId == telegramId && e.CreatedAt >= today)
             .SumAsync(e => e.Amount);
     }
@@ -115,7 +113,7 @@ public class ExpenseService : IExpenseService
     {
         var today = DateTime.UtcNow.Date;
         return await _context.Expenses
-            .Include(e => e.User)
+            .AsNoTracking()
             .Where(e => e.User!.TelegramId == telegramId && e.CreatedAt >= today)
             .OrderByDescending(e => e.CreatedAt)
             .Take(50)
@@ -135,7 +133,7 @@ public class ExpenseService : IExpenseService
         var startOfMonth = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         
         var summary = await _context.Expenses
-            .Include(e => e.User)
+            .AsNoTracking()
             .Where(e => e.User!.TelegramId == telegramId && e.CreatedAt >= startOfMonth)
             .GroupBy(e => e.Category == Category.Cafe ? Category.Food : e.Category)
             .Select(g => new CategorySummaryGetDto
@@ -204,7 +202,7 @@ public class ExpenseService : IExpenseService
     public async Task<List<ExpenseGetDto>> GetExpenseMoreAsync(long telegramId, decimal minAmount)
     {
         return await _context.Expenses
-            .Include(e => e.User)
+            .AsNoTracking()
             .Where(e => e.User!.TelegramId == telegramId && e.Amount >= minAmount)
             .OrderByDescending(e => e.CreatedAt)
             .Take(100)

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowRight,
@@ -509,7 +509,6 @@ export default function Home() {
   const [dayTotal, setDayTotal] = useState(0);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [monthSummary, setMonthSummary] = useState<CategorySummary[]>([]);
-  const [, setAllMonthExpenses] = useState<Expense[]>([]);
 
   // Statistics active category filter
   const [selectedStatKey, setSelectedStatKey] = useState<string | null>(null);
@@ -605,7 +604,6 @@ export default function Home() {
       const sum = dayItems.reduce((acc, it) => acc + Number(it.amount || 0), 0);
       setDayTotal(sum);
       setExpenses(dayItems);
-      setAllMonthExpenses(monthItems);
 
       const grouped = new Map<string, number>();
       for (const item of monthItems) {
@@ -867,11 +865,14 @@ export default function Home() {
   };
 
   // Month Statistics Calculations
-  const monthTotal = monthSummary.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+  const monthTotal = useMemo(
+    () => monthSummary.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0),
+    [monthSummary]
+  );
   const monthUsd = (monthTotal / USD_RATE).toFixed(2);
 
   // Group summary by unified categories (Cafe -> Food, etc.)
-  const formattedStatItems = (() => {
+  const formattedStatItems = useMemo(() => {
     const map = new Map<string, number>();
     for (const item of monthSummary) {
       const key = getCategoryKey(item.category);
@@ -891,7 +892,7 @@ export default function Home() {
         };
       })
       .sort((a, b) => b.amount - a.amount);
-  })();
+  }, [monthSummary, monthTotal]);
 
   const dayUsd = (dayTotal / USD_RATE).toFixed(2);
   const isToday = !selectedDate || selectedDate === todayDate;
